@@ -334,7 +334,7 @@ GPL-3.0, MPL-2.0 and MIT; licenses\THIRD-PARTY-LICENSES.md lists each one
 with its exact upstream commit.
 
 Complete source for this build, including the core build scripts:
-https://github.com/Denarmo/Dena.emu/tree/$Commit
+https://github.com/Denarmo/Dena.emu-Free/tree/$Commit
 "@
 
 # --- Portable zip -----------------------------------------------------------

@@ -37,9 +37,9 @@
     </p>
   </description>
   <launchable type="desktop-id">io.github.denarmo.DenaEmu.desktop</launchable>
-  <url type="homepage">https://github.com/Denarmo/Dena.emu</url>
-  <url type="bugtracker">https://github.com/Denarmo/Dena.emu/issues</url>
-  <url type="vcs-browser">https://github.com/Denarmo/Dena.emu</url>
+  <url type="homepage">https://github.com/Denarmo/Dena.emu-Free</url>
+  <url type="bugtracker">https://github.com/Denarmo/Dena.emu-Free/issues</url>
+  <url type="vcs-browser">https://github.com/Denarmo/Dena.emu-Free</url>
   <categories>
     <category>Game</category>
     <category>Emulator</category>

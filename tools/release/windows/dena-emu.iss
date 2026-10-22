@@ -40,9 +40,9 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=Dena.emu
-AppPublisherURL=https://github.com/Denarmo/Dena.emu
-AppSupportURL=https://github.com/Denarmo/Dena.emu/issues
-AppUpdatesURL=https://github.com/Denarmo/Dena.emu/releases
+AppPublisherURL=https://github.com/Denarmo/Dena.emu-Free
+AppSupportURL=https://github.com/Denarmo/Dena.emu-Free/issues
+AppUpdatesURL=https://github.com/Denarmo/Dena.emu-Free/releases
 VersionInfoVersion={#AppVersion}.0
 VersionInfoProductName={#AppName}
 ; Per user, no UAC prompt.
