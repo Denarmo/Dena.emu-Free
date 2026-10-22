@@ -1,0 +1,45 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Dena.emu system image: Wi-Fi (docs/specs/single-card.md). Runs once at boot
+# next to the session: wpa_supplicant on wlan0 with the networks saved in
+# Dena/user/wpa_supplicant.conf on the games partition, DHCP from busybox
+# udhcpc (dena-dhcp), and the clock from NTP once there is a lease. The
+# launcher adds networks through wpa_supplicant's control socket
+# (/run/wpa_supplicant/wlan0, wpa_cli), which saves them to that file.
+set -u
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+. /usr/lib/dena/system/dena-lib.sh
+CONF="$CARD/Dena/user/wpa_supplicant.conf"
+NETLOG="$RUN/net.log"
+
+# wlan0 shows up once the SDIO card has probed and loaded its firmware.
+i=0
+while [ ! -d /sys/class/net/wlan0 ] && [ $i -lt 40 ]; do
+  sleep 0.5
+  i=$((i + 1))
+done
+if [ ! -d /sys/class/net/wlan0 ]; then
+  log "Wi-Fi: no wlan0"
+  exit 0
+fi
+if ! grep -q " $CARD " /proc/mounts; then
+  log "Wi-Fi: no games partition"
+  exit 0
+fi
+
+# A new card gets an empty network list that the launcher can add to.
+if [ ! -f "$CONF" ]; then
+  printf 'ctrl_interface=DIR=/run/wpa_supplicant\nupdate_config=1\n' > "$CONF"
+fi
+
+mkdir -p /run/wpa_supplicant
+if ! wpa_supplicant -B -D nl80211 -i wlan0 -c "$CONF" -P /run/wpa_supplicant.pid >> "$NETLOG" 2>&1; then
+  log "Wi-Fi: wpa_supplicant failed"
+  exit 0
+fi
+# Keeps asking in the background until a network is joined.
+udhcpc -b -R -i wlan0 -x hostname:dena -p /run/udhcpc.wlan0.pid \
+  -s /usr/lib/dena/system/dena-dhcp >> "$NETLOG" 2>&1
+n=$(grep -c '^network=' "$CONF")
+log "Wi-Fi: started, $n saved networks"
+exit 0

@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Dena.emu system image: busybox init runs this before it kills everything,
+# for every power off (the launcher exiting, or dena-powerd on a long press
+# of the power key). Stops the app, shows the shutdown screen, then flushes
+# and unmounts the games partition so it is never left dirty.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+. /usr/lib/dena/system/dena-lib.sh
+: > "$RUN/shutdown"
+splash quit 2> /dev/null
+
+# dena-powerd has asked the launcher to save before it got here.
+killall dena-launcher dena-powerd 2> /dev/null
+i=0
+while pidof dena-launcher dena-powerd > /dev/null && [ $i -lt 30 ]; do
+  sleep 0.1
+  i=$((i + 1))
+done
+killall -KILL dena-launcher dena-powerd 2> /dev/null
+splash_now message SHUTTING DOWN
+log "shutdown"
+save_diag "shutdown"
+sync
+umount /mnt/card 2>/dev/null || mount -o remount,ro /mnt/card 2>/dev/null
+sync

@@ -1,0 +1,39 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Dena.emu system image: busybox udhcpc script for wlan0 (started by dena-net).
+# udhcpc passes the event as $1 and the lease in interface, ip, mask,
+# router and dns. On the first lease the clock is set from NTP (TLS for Drive
+# sync and RomM needs it) and saved to the RTC. Debian's busybox has ntpd,
+# Ubuntu's (the cloud build) only rdate (RFC 868, TCP 37).
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+LOG=/run/dena/net.log
+
+case "$1" in
+  deconfig)
+    ip addr flush dev "$interface"
+    ip link set "$interface" up
+    ;;
+  bound|renew)
+    ip addr flush dev "$interface"
+    ip addr add "$ip/${mask:-24}" dev "$interface"
+    for r in ${router:-}; do
+      ip route replace default via "$r" dev "$interface"
+      break
+    done
+    : > /etc/resolv.conf
+    for d in ${dns:-}; do
+      echo "nameserver $d" >> /etc/resolv.conf
+    done
+    echo "dena-net: $1 $ip on $interface" >> "$LOG"
+    if [ ! -f /run/dena/clock-set ] && ! pidof ntpd > /dev/null; then
+      (
+        if ntpd -n -q -p pool.ntp.org >> "$LOG" 2>&1 || rdate -s time.nist.gov >> "$LOG" 2>&1; then
+          touch /run/dena/clock-set
+          hwclock -w -u >> "$LOG" 2>&1
+          echo "dena-net: clock set to $(date)" >> "$LOG"
+        fi
+      ) &
+    fi
+    ;;
+esac
+exit 0

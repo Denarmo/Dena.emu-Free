@@ -1,0 +1,2 @@
+/* Case shim: MSVC-style -lVersion for MinGW's libversion.a (GNU ld script). */
+INPUT(-lversion)

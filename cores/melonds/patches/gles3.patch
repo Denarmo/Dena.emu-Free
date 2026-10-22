@@ -1,0 +1,828 @@
+diff --git a/Makefile b/Makefile
+index 1e7c7cf..35bd471 100644
+--- a/Makefile
++++ b/Makefile
+@@ -78,7 +78,10 @@ ifeq ($(platform), unix)
+       LIBS += -lpthread -lrt
+    endif
+    HAVE_THREADS=1
+-   ifneq ($(filter $(ARCH),x86 x86_64),)
++   ifeq ($(GLES),1)
++     LIBS += -lGLESv2
++     HAVE_OPENGLES3=1
++   else ifneq ($(filter $(ARCH),x86 x86_64),)
+      LIBS += -lGL
+      HAVE_OPENGL=1
+    endif
+diff --git a/Makefile.common b/Makefile.common
+index fb49ba8..05c1084 100644
+--- a/Makefile.common
++++ b/Makefile.common
+@@ -105,6 +105,18 @@ SOURCES_CXX +=  $(MELON_DIR)/GPU_OpenGL.cpp \
+                 $(CORE_DIR)/opengl.cpp
+ 
+ DEFINES += -DHAVE_OPENGL -DOGLRENDERER_ENABLED -DCORE
++else ifeq ($(HAVE_OPENGLES3), 1)
++# OpenGL ES 3.2 (Android, embedded Linux): same renderer, GLSL ES shaders.
++SOURCES_C += $(CORE_DIR)/libretro-common/glsm/glsm.c \
++             $(CORE_DIR)/libretro-common/glsym/rglgen.c \
++             $(CORE_DIR)/libretro-common/glsym/glsym_es3.c
++
++SOURCES_CXX +=  $(MELON_DIR)/GPU_OpenGL.cpp \
++                $(MELON_DIR)/GPU3D_OpenGL.cpp \
++                $(MELON_DIR)/OpenGLSupport.cpp \
++                $(CORE_DIR)/opengl.cpp
++
++DEFINES += -DHAVE_OPENGLES -DHAVE_OPENGLES3 -DHAVE_OPENGLES_3_2 -DOGLRENDERER_ENABLED -DCORE
+ endif
+ 
+ ifeq ($(HAVE_THREADS), 1)
+diff --git a/jni/Android.mk b/jni/Android.mk
+index 299a8d2..efcd1d6 100644
+--- a/jni/Android.mk
++++ b/jni/Android.mk
+@@ -5,6 +5,7 @@ MELON_DIR    := $(ROOT_DIR)/src
+ CORE_DIR     := $(MELON_DIR)/libretro
+ JIT_ARCH     :=
+ HAVE_THREADS := 1
++HAVE_OPENGLES3 := 1
+ 
+ ifeq ($(TARGET_ARCH_ABI),arm64-v8a)
+   JIT_ARCH := aarch64
+@@ -22,4 +23,5 @@ LOCAL_SRC_FILES := $(SOURCES_C) $(SOURCES_CXX) $(SOURCES_S)
+ LOCAL_CFLAGS    := $(CORE_FLAGS)
+ LOCAL_CPPFLAGS  := -std=c++17 -fexceptions $(CORE_FLAGS)
+ LOCAL_LDFLAGS   := -Wl,-version-script=$(CORE_DIR)/link.T
++LOCAL_LDLIBS    := -lGLESv3
+ include $(BUILD_SHARED_LIBRARY)
+diff --git a/src/GPU.cpp b/src/GPU.cpp
+index de229b3..961be87 100644
+--- a/src/GPU.cpp
++++ b/src/GPU.cpp
+@@ -382,23 +382,26 @@ void InitRenderer(int renderer)
+ #ifdef OGLRENDERER_ENABLED
+     if (renderer == 1)
+     {
+-        CurGLCompositor = std::make_unique<GLCompositor>();
+-        // Create opengl rendrerer
+-        if (!CurGLCompositor->Init())
++        bool ok = OpenGL::SupportsRenderer();
++        if (ok)
+         {
+-            // Fallback on software renderer
+-            renderer = 0;
+-            GPU3D::CurrentRenderer = std::make_unique<GPU3D::SoftRenderer>();
+-            GPU3D::CurrentRenderer->Init();
++            CurGLCompositor = std::make_unique<GLCompositor>();
++            ok = CurGLCompositor->Init();
+         }
+-        GPU3D::CurrentRenderer = std::make_unique<GPU3D::GLRenderer>();
+-        if (!GPU3D::CurrentRenderer->Init())
++        if (ok)
++        {
++            // Create opengl rendrerer
++            GPU3D::CurrentRenderer = std::make_unique<GPU3D::GLRenderer>();
++            ok = GPU3D::CurrentRenderer->Init();
++            if (!ok) CurGLCompositor->DeInit();
++        }
++        if (!ok)
+         {
+             // Fallback on software renderer
+-            CurGLCompositor->DeInit();
+             CurGLCompositor.reset();
+             renderer = 0;
+             GPU3D::CurrentRenderer = std::make_unique<GPU3D::SoftRenderer>();
++            GPU3D::CurrentRenderer->Init();
+         }
+     }
+     else
+diff --git a/src/GPU3D_OpenGL.cpp b/src/GPU3D_OpenGL.cpp
+index ccac08a..0bc7c47 100644
+--- a/src/GPU3D_OpenGL.cpp
++++ b/src/GPU3D_OpenGL.cpp
+@@ -281,7 +281,11 @@ bool GLRenderer::Init()
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
++#ifdef HAVE_OPENGLES
++    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB5_A1, 1024, 48, 0, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, NULL);
++#else
+     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB5_A1, 1024, 48, 0, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, NULL);
++#endif
+ 
+     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+ 
+@@ -360,6 +364,7 @@ void GLRenderer::SetRenderSettings(GPU::RenderSettings& settings)
+ 
+     glBindBuffer(GL_PIXEL_PACK_BUFFER, PixelbufferID);
+     glBufferData(GL_PIXEL_PACK_BUFFER, 256*192*4, NULL, GL_DYNAMIC_READ);
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+ 
+     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+ 
+@@ -1203,7 +1208,19 @@ void GLRenderer::RenderFrame()
+         else if (mask & (1<<5)) vram = GPU::VRAM_F;
+         else if (mask & (1<<6)) vram = GPU::VRAM_G;
+ 
++#ifdef HAVE_OPENGLES
++        // GLES has no 1_5_5_5_REV: repack ABGR1555 to RGBA5551, same values.
++        static u16 pal[1024*8];
++        const u16* src = (const u16*)vram;
++        for (int j = 0; j < 1024*8; j++)
++        {
++            u16 c = src[j];
++            pal[j] = ((c & 0x1F) << 11) | (((c >> 5) & 0x1F) << 6) | (((c >> 10) & 0x1F) << 1) | (c >> 15);
++        }
++        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*8, 1024, 8, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, pal);
++#else
+         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i*8, 1024, 8, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram);
++#endif
+     }
+ 
+     glDisable(GL_SCISSOR_TEST);
+@@ -1299,7 +1316,14 @@ void GLRenderer::PrepareCaptureFrame()
+     glBlitFramebuffer(0, 0, ScreenW, ScreenH, 0, 0, 256, 192, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+ 
+     glBindFramebuffer(GL_READ_FRAMEBUFFER, FramebufferID[3]);
++    // Bound here and released below: a frontend may use pack buffers too.
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, PixelbufferID);
++#ifdef HAVE_OPENGLES
++    glReadPixels(0, 0, 256, 192, GL_RGBA, GL_UNSIGNED_BYTE, NULL); // swapped in GetLine
++#else
+     glReadPixels(0, 0, 256, 192, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
++#endif
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+ }
+ 
+ u32* GLRenderer::GetLine(int line)
+@@ -1308,9 +1332,18 @@ u32* GLRenderer::GetLine(int line)
+ 
+     if (line == 0)
+     {
++        glBindBuffer(GL_PIXEL_PACK_BUFFER, PixelbufferID);
+         u8* data = (u8*)glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+         if (data) memcpy(&Framebuffer[stride*0], data, 4*stride*192);
+         glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
++        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
++#ifdef HAVE_OPENGLES
++        for (int i = 0; i < stride*192; i++)
++        {
++            u32 c = Framebuffer[i];
++            Framebuffer[i] = (c & 0xFF00FF00) | ((c & 0xFF) << 16) | ((c >> 16) & 0xFF);
++        }
++#endif
+     }
+ 
+     u64* ptr = (u64*)&Framebuffer[stride * line];
+diff --git a/src/GPU3D_OpenGL_shaders.h b/src/GPU3D_OpenGL_shaders.h
+index db15df3..378bc65 100644
+--- a/src/GPU3D_OpenGL_shaders.h
++++ b/src/GPU3D_OpenGL_shaders.h
+@@ -48,9 +48,9 @@ void main()
+ {
+     oColor = vec4(uColor).bgra / 31.0;
+     oAttr.r = float(uOpaquePolyID) / 63.0;
+-    oAttr.g = 0;
++    oAttr.g = 0.0;
+     oAttr.b = float(uFogFlag);
+-    oAttr.a = 1;
++    oAttr.a = 1.0;
+ }
+ )";
+ 
+@@ -117,7 +117,7 @@ void main()
+ 
+     int polyid = int(attr.r * 63.0);
+ 
+-    if (attr.g != 0)
++    if (attr.g != 0.0)
+     {
+         vec4 depthU = texelFetch(DepthBuffer, coord + ivec2(0,-scale), 0);
+         vec4 attrU = texelFetch(AttrBuffer, coord + ivec2(0,-scale), 0);
+@@ -141,7 +141,7 @@ void main()
+             if ((uDispCnt & (1<<4)) != 0)
+                 ret.a = 0.5;
+             else
+-                ret.a = 1;
++                ret.a = 1.0;
+         }
+     }
+ 
+@@ -207,7 +207,7 @@ void main()
+     vec4 depth = texelFetch(DepthBuffer, coord, 0);
+     vec4 attr = texelFetch(AttrBuffer, coord, 0);
+ 
+-    if (attr.b != 0) ret = CalculateFog(depth.r);
++    if (attr.b != 0.0) ret = CalculateFog(depth.r);
+ 
+     oColor = ret;
+ }
+@@ -307,7 +307,7 @@ vec4 TextureFetch_I2(ivec2 addr, ivec4 st, int wrapmode, float alpha0)
+     addr.y = (addr.y << 2) + pixel.r;
+     vec4 color = texelFetch(TexPalMem, ivec2(addr.y&0x3FF, addr.y>>10), 0);
+ 
+-    return vec4(color.rgb, (pixel.r>0)?1:alpha0);
++    return vec4(color.rgb, (pixel.r>0)?1.0:alpha0);
+ }
+ 
+ vec4 TextureFetch_I4(ivec2 addr, ivec4 st, int wrapmode, float alpha0)
+@@ -323,7 +323,7 @@ vec4 TextureFetch_I4(ivec2 addr, ivec4 st, int wrapmode, float alpha0)
+     addr.y = (addr.y << 3) + pixel.r;
+     vec4 color = texelFetch(TexPalMem, ivec2(addr.y&0x3FF, addr.y>>10), 0);
+ 
+-    return vec4(color.rgb, (pixel.r>0)?1:alpha0);
++    return vec4(color.rgb, (pixel.r>0)?1.0:alpha0);
+ }
+ 
+ vec4 TextureFetch_I8(ivec2 addr, ivec4 st, int wrapmode, float alpha0)
+@@ -337,7 +337,7 @@ vec4 TextureFetch_I8(ivec2 addr, ivec4 st, int wrapmode, float alpha0)
+     addr.y = (addr.y << 3) + pixel.r;
+     vec4 color = texelFetch(TexPalMem, ivec2(addr.y&0x3FF, addr.y>>10), 0);
+ 
+-    return vec4(color.rgb, (pixel.r>0)?1:alpha0);
++    return vec4(color.rgb, (pixel.r>0)?1.0:alpha0);
+ }
+ 
+ vec4 TextureFetch_Compressed(ivec2 addr, ivec4 st, int wrapmode)
+@@ -601,7 +601,7 @@ vec4 FinalColor()
+         if ((uDispCnt & (1<<1)) == 0)
+         {
+             // toon
+-            vec3 tooncolor = uToonColors[int(vcol.r * 31)].rgb;
++            vec3 tooncolor = uToonColors[int(vcol.r * 31.0)].rgb;
+             vcol.rgb = tooncolor;
+         }
+         else
+@@ -638,7 +638,7 @@ vec4 FinalColor()
+     {
+         if ((uDispCnt & (1<<1)) != 0)
+         {
+-            vec3 tooncolor = uToonColors[int(vcol.r * 31)].rgb;
++            vec3 tooncolor = uToonColors[int(vcol.r * 31.0)].rgb;
+             col.rgb = min(col.rgb + tooncolor, 1.0);
+         }
+     }
+@@ -698,13 +698,13 @@ const char* kRenderFS_ZO = R"(
+ void main()
+ {
+     vec4 col = FinalColor();
+-    if (col.a < 30.5/31) discard;
++    if (col.a < 30.5/31.0) discard;
+ 
+     oColor = col;
+     oAttr.r = float((fPolygonAttr.x >> 24) & 0x3F) / 63.0;
+-    oAttr.g = 0;
++    oAttr.g = 0.0;
+     oAttr.b = float((fPolygonAttr.x >> 15) & 0x1);
+-    oAttr.a = 1;
++    oAttr.a = 1.0;
+ }
+ )";
+ 
+@@ -715,13 +715,13 @@ smooth in float fZ;
+ void main()
+ {
+     vec4 col = FinalColor();
+-    if (col.a < 30.5/31) discard;
++    if (col.a < 30.5/31.0) discard;
+ 
+     oColor = col;
+     oAttr.r = float((fPolygonAttr.x >> 24) & 0x3F) / 63.0;
+-    oAttr.g = 0;
++    oAttr.g = 0.0;
+     oAttr.b = float((fPolygonAttr.x >> 15) & 0x1);
+-    oAttr.a = 1;
++    oAttr.a = 1.0;
+     gl_FragDepth = fZ;
+ }
+ )";
+@@ -731,10 +731,10 @@ const char* kRenderFS_ZE = R"(
+ void main()
+ {
+     vec4 col = FinalColor();
+-    if (col.a < 30.5/31) discard;
++    if (col.a < 30.5/31.0) discard;
+ 
+-    oAttr.g = 1;
+-    oAttr.a = 1;
++    oAttr.g = 1.0;
++    oAttr.a = 1.0;
+ }
+ )";
+ 
+@@ -745,10 +745,10 @@ smooth in float fZ;
+ void main()
+ {
+     vec4 col = FinalColor();
+-    if (col.a < 30.5/31) discard;
++    if (col.a < 30.5/31.0) discard;
+ 
+-    oAttr.g = 1;
+-    oAttr.a = 1;
++    oAttr.g = 1.0;
++    oAttr.a = 1.0;
+     gl_FragDepth = fZ;
+ }
+ )";
+@@ -758,12 +758,12 @@ const char* kRenderFS_ZT = R"(
+ void main()
+ {
+     vec4 col = FinalColor();
+-    if (col.a < 0.5/31) discard;
+-    if (col.a >= 30.5/31) discard;
++    if (col.a < 0.5/31.0) discard;
++    if (col.a >= 30.5/31.0) discard;
+ 
+     oColor = col;
+-    oAttr.b = 0;
+-    oAttr.a = 1;
++    oAttr.b = 0.0;
++    oAttr.a = 1.0;
+ }
+ )";
+ 
+@@ -774,12 +774,12 @@ smooth in float fZ;
+ void main()
+ {
+     vec4 col = FinalColor();
+-    if (col.a < 0.5/31) discard;
+-    if (col.a >= 30.5/31) discard;
++    if (col.a < 0.5/31.0) discard;
++    if (col.a >= 30.5/31.0) discard;
+ 
+     oColor = col;
+-    oAttr.b = 0;
+-    oAttr.a = 1;
++    oAttr.b = 0.0;
++    oAttr.a = 1.0;
+     gl_FragDepth = fZ;
+ }
+ )";
+diff --git a/src/GPU_OpenGL_shaders.h b/src/GPU_OpenGL_shaders.h
+index ba3b4bd..a2577f6 100644
+--- a/src/GPU_OpenGL_shaders.h
++++ b/src/GPU_OpenGL_shaders.h
+@@ -73,8 +73,8 @@ void main()
+             // 3D on top, blending
+ 
+             float xpos = fTexcoord.x + _3dxpos;
+-            float ypos = mod(fTexcoord.y, 192);
+-            ivec4 _3dpix = ivec4(texelFetch(_3DTex, ivec2(vec2(xpos, ypos)*u3DScale), 0).bgra
++            float ypos = mod(fTexcoord.y, 192.0);
++            ivec4 _3dpix = ivec4(texelFetch(_3DTex, ivec2(vec2(xpos, ypos)*float(u3DScale)), 0).bgra
+                          * vec4(63,63,63,31));
+ 
+             if (_3dpix.a > 0)
+@@ -94,8 +94,8 @@ void main()
+             // 3D on bottom, blending
+ 
+             float xpos = fTexcoord.x + _3dxpos;
+-            float ypos = mod(fTexcoord.y, 192);
+-            ivec4 _3dpix = ivec4(texelFetch(_3DTex, ivec2(vec2(xpos, ypos)*u3DScale), 0).bgra
++            float ypos = mod(fTexcoord.y, 192.0);
++            ivec4 _3dpix = ivec4(texelFetch(_3DTex, ivec2(vec2(xpos, ypos)*float(u3DScale)), 0).bgra
+                          * vec4(63,63,63,31));
+ 
+             if (_3dpix.a > 0)
+@@ -114,8 +114,8 @@ void main()
+             // 3D on top, normal/fade
+ 
+             float xpos = fTexcoord.x + _3dxpos;
+-            float ypos = mod(fTexcoord.y, 192);
+-            ivec4 _3dpix = ivec4(texelFetch(_3DTex, ivec2(vec2(xpos, ypos)*u3DScale), 0).bgra
++            float ypos = mod(fTexcoord.y, 192.0);
++            ivec4 _3dpix = ivec4(texelFetch(_3DTex, ivec2(vec2(xpos, ypos)*float(u3DScale)), 0).bgra
+                          * vec4(63,63,63,31));
+ 
+             if (_3dpix.a > 0)
+@@ -178,7 +178,7 @@ out vec4 oColor;
+ 
+ ivec4 Get3DPixel(vec2 pos)
+ {
+-    return ivec4(texelFetch(_3DTex, ivec2(pos*u3DScale), 0).bgra
++    return ivec4(texelFetch(_3DTex, ivec2(pos*float(u3DScale)), 0).bgra
+          * vec4(63,63,63,31));
+ }
+ 
+@@ -259,7 +259,7 @@ void main()
+         float yfract = fract(fTexcoord.y);
+ 
+         float xpos = val3.r + xfract;
+-        float ypos = mod(fTexcoord.y, 192);
++        float ypos = mod(fTexcoord.y, 192.0);
+         ivec4 _3dpix = Get3DPixel(vec2(xpos,ypos));
+ 
+         ivec4 p00 = GetFullPixel(val1, val2, val3, _3dpix);
+@@ -482,7 +482,7 @@ vec4 Get2DPixel(vec2 texcoord, int level)
+ 
+ ivec4 Get3DPixel(vec2 pos)
+ {
+-    return ivec4(texelFetch(_3DTex, ivec2(pos*u3DScale), 0).bgra
++    return ivec4(texelFetch(_3DTex, ivec2(pos*float(u3DScale)), 0).bgra
+          * vec4(63,63,63,31));
+ }
+ 
+@@ -765,7 +765,7 @@ void main()
+         int eva, evb, evy;
+ 
+         float xpos = val3.r + fract(fTexcoord.x);
+-        float ypos = mod(fTexcoord.y, 192);
++        float ypos = mod(fTexcoord.y, 192.0);
+         ivec4 _3dpix = Get3DPixel(vec2(xpos, ypos));
+ 
+         if (compmode == 4)
+diff --git a/src/OpenGLSupport.cpp b/src/OpenGLSupport.cpp
+index 9df814b..09dfea6 100644
+--- a/src/OpenGLSupport.cpp
++++ b/src/OpenGLSupport.cpp
+@@ -16,17 +16,72 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include <string>
++
+ #include "OpenGLSupport.h"
+ 
+ 
+ namespace OpenGL
+ {
+ 
++#ifdef HAVE_OPENGLES
++// The shaders are GLSL 1.40. GLSL ES 3.00 differs only in the header
++// (version, default precision) and in fragment outputs, which need explicit
++// locations because GLES has no glBindFragDataLocation.
++static std::string ToGLES(const char* src, bool frag)
++{
++    std::string s(src);
++    const std::string v140 = "#version 140";
++    size_t pos = s.find(v140);
++    if (pos != std::string::npos)
++        s.replace(pos, v140.size(),
++            "#version 300 es\n"
++            "precision highp float;\n"
++            "precision highp int;\n"
++            "precision highp sampler2D;\n"
++            "precision highp usampler2D;\n");
++    if (frag)
++    {
++        const char* outs[][2] = {
++            {"\nout vec4 oColor;", "\nlayout(location = 0) out vec4 oColor;"},
++            {"\nout vec4 oAttr;", "\nlayout(location = 1) out vec4 oAttr;"},
++        };
++        for (auto& o : outs)
++            if ((pos = s.find(o[0])) != std::string::npos)
++                s.replace(pos, strlen(o[0]), o[1]);
++    }
++    return s;
++}
++
++#endif
++
++bool SupportsRenderer()
++{
++#ifdef HAVE_OPENGLES
++    // The 3D renderer needs GLES 3.2: indexed colour masks (glColorMaski)
++    // and glFramebufferTexture. Older devices keep the software renderer.
++    const char* ver = (const char*)glGetString(GL_VERSION);
++    int major = 0, minor = 0;
++    if (!ver || sscanf(ver, "OpenGL ES %d.%d", &major, &minor) != 2) return false;
++    if (major > 3 || (major == 3 && minor >= 2)) return true;
++    printf("OpenGL: %s, the 3D renderer needs OpenGL ES 3.2\n", ver);
++    return false;
++#else
++    return true;
++#endif
++}
++
+ bool BuildShaderProgram(const char* vs, const char* fs, GLuint* ids, const char* name)
+ {
+     int len;
+     int res;
+ 
++#ifdef HAVE_OPENGLES
++    std::string vs_es = ToGLES(vs, false), fs_es = ToGLES(fs, true);
++    vs = vs_es.c_str();
++    fs = fs_es.c_str();
++#endif
++
+     ids[0] = glCreateShader(GL_VERTEX_SHADER);
+     len = strlen(vs);
+     glShaderSource(ids[0], 1, &vs, &len);
+@@ -65,8 +120,11 @@ bool BuildShaderProgram(const char* vs, const char* fs, GLuint* ids, const char*
+         delete[] log;
+ 
+         FILE* logf = fopen("shaderfail.log", "w");
+-        fwrite(fs, len+1, 1, logf);
+-        fclose(logf);
++        if (logf)
++        {
++            fwrite(fs, len+1, 1, logf);
++            fclose(logf);
++        }
+ 
+         glDeleteShader(ids[0]);
+         glDeleteShader(ids[1]);
+diff --git a/src/OpenGLSupport.h b/src/OpenGLSupport.h
+index 5110b9e..e99b845 100644
+--- a/src/OpenGLSupport.h
++++ b/src/OpenGLSupport.h
+@@ -33,6 +33,9 @@
+ namespace OpenGL
+ {
+ 
++// Whether the context can run the OpenGL 3D renderer and compositor.
++bool SupportsRenderer();
++
+ bool BuildShaderProgram(const char* vs, const char* fs, GLuint* ids, const char* name);
+ bool LinkShaderProgram(GLuint* ids);
+ void DeleteShaderProgram(GLuint* ids);
+diff --git a/src/libretro/libretro-common/glsm/glsm.c b/src/libretro/libretro-common/glsm/glsm.c
+index a70aaf4..23bae30 100644
+--- a/src/libretro/libretro-common/glsm/glsm.c
++++ b/src/libretro/libretro-common/glsm/glsm.c
+@@ -1045,7 +1045,7 @@ void rglBindFragDataLocation(GLuint program, GLuint colorNumber,
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glBindFragDataLocation.\n");
+ #endif
+-#if !defined(HAVE_OPENGLES2)
++#if !defined(HAVE_OPENGLES)
+    glBindFragDataLocation(program, colorNumber, name);
+ #endif
+ }
+@@ -2248,7 +2248,13 @@ void * rglMapBuffer(	GLenum target, GLenum access)
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glMapBuffer.\n");
+ #endif
+-#if defined(HAVE_OPENGLES)
++#if defined(HAVE_OPENGLES3)
++   /* GLES 3 maps ranges only; GL_READ_ONLY / GL_WRITE_ONLY are desktop enums. */
++   GLint size = 0;
++   glGetBufferParameteriv(target, GL_BUFFER_SIZE, &size);
++   return glMapBufferRange(target, 0, size,
++         access == 0x88B8 /* GL_READ_ONLY */ ? GL_MAP_READ_BIT : GL_MAP_WRITE_BIT);
++#elif defined(HAVE_OPENGLES)
+    return glMapBufferOES(target, access);
+ #else
+    return glMapBuffer(target, access);
+@@ -2629,8 +2635,10 @@ void rglDrawBuffer(GLenum buf)
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glDrawBuffer.\n");
+ #endif
+-#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
++#if defined(HAVE_OPENGL)
+    glDrawBuffer(buf);
++#elif defined(HAVE_OPENGLES3)
++   glDrawBuffers(1, &buf);
+ #endif
+ }
+ 
+diff --git a/src/libretro/libretro-common/include/glsym/rglgen_headers.h b/src/libretro/libretro-common/include/glsym/rglgen_headers.h
+index 7d44b6d..a49e2db 100644
+--- a/src/libretro/libretro-common/include/glsym/rglgen_headers.h
++++ b/src/libretro/libretro-common/include/glsym/rglgen_headers.h
+@@ -54,9 +54,16 @@
+ #include <GL3/gl3.h>
+ #include <GL3/gl3ext.h>
+ #elif defined(HAVE_OPENGLES3)
++#if defined(HAVE_OPENGLES_3_2)
++#include <GLES3/gl32.h>
++#else
+ #include <GLES3/gl3.h>
++#endif
+ #define __gl2_h_
+ #include <GLES2/gl2ext.h>
++/* Desktop-only types named by glsm's prototypes. */
++typedef double GLclampd;
++typedef double GLdouble;
+ #elif defined(HAVE_OPENGLES2)
+ #include <GLES2/gl2.h>
+ #include <GLES2/gl2ext.h>
+diff --git a/src/libretro/libretro.cpp b/src/libretro/libretro.cpp
+index 2207849..74ed71c 100644
+--- a/src/libretro/libretro.cpp
++++ b/src/libretro/libretro.cpp
+@@ -54,7 +54,7 @@ bool swap_screen_toggled = false;
+ const int SLOT_1_2_BOOT = 1;
+ 
+ static bool libretro_supports_option_categories = false;
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+ static bool opengl_options = true;
+ #endif
+ static bool hybrid_options = true;
+@@ -137,7 +137,7 @@ static bool update_option_visibility(void)
+    struct retro_variable var;
+    bool updated = false;
+ 
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    // Show/hide OpenGL core options
+    bool opengl_options_prev = opengl_options;
+ 
+@@ -178,7 +178,7 @@ static bool update_option_visibility(void)
+       option_display.key = "melonds_hybrid_small_screen";
+       environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
+ 
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+       option_display.key = "melonds_hybrid_ratio";
+       environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
+ #endif
+@@ -326,7 +326,7 @@ static void check_variables(bool init)
+ {
+    struct retro_variable var = {0};
+ 
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    bool gl_update = false;
+ #endif
+ 
+@@ -376,7 +376,7 @@ static void check_variables(bool init)
+         screen_layout_data.screen_gap_unscaled = std::stoi(var.value);
+    }
+ 
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    var.key = "melonds_hybrid_ratio";
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value != NULL)
+    {
+@@ -397,7 +397,7 @@ static void check_variables(bool init)
+       else
+          screen_layout_data.hybrid_small_screen  = SmallScreenLayout::SmallScreenDuplicate;
+ 
+-   #ifdef HAVE_OPENGL
++   #if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+       if(old_hybrid_screen_value != screen_layout_data.hybrid_small_screen) {
+          gl_update = true;
+       }
+@@ -443,7 +443,7 @@ static void check_variables(bool init)
+          new_touch_mode = TouchMode::Joystick;
+    }
+ 
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    if(input_state.current_touch_mode != new_touch_mode) // Hide the cursor
+       gl_update = true;
+ 
+@@ -636,7 +636,7 @@ static void render_frame(void)
+ {
+    if (current_renderer == CurrentRenderer::None)
+    {
+- #ifdef HAVE_OPENGL
++ #if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+          if (enable_opengl && using_opengl)
+          {
+             // Try to initialize opengl, if it failed fallback to software
+@@ -652,14 +652,15 @@ static void render_frame(void)
+             if(using_opengl) deinitialize_opengl_renderer();
+ #endif
+             current_renderer = CurrentRenderer::Software;
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+          }
+ #endif
+    }
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    if(using_opengl)
+    {
+-      if (current_renderer == CurrentRenderer::Software) render_opengl_frame(true);
++      // GPU::Renderer is 0 when the GL renderer could not start (software 3D).
++      if (current_renderer == CurrentRenderer::Software || GPU::Renderer == 0) render_opengl_frame(true);
+       else render_opengl_frame(false);
+    }
+    else if(!enable_opengl)
+@@ -703,7 +704,7 @@ static void render_frame(void)
+ 
+          video_cb((uint8_t*)screen_layout_data.buffer_ptr, screen_layout_data.buffer_width, screen_layout_data.buffer_height, screen_layout_data.buffer_width * sizeof(uint32_t));
+       }
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    }
+ #endif
+ }
+@@ -876,7 +877,7 @@ static bool _handle_load_game(unsigned type, const struct retro_game_info *info)
+    check_variables(true);
+ 
+    // Initialize the opengl state if needed
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    if (enable_opengl)
+       initialize_opengl();
+ #endif
+diff --git a/src/libretro/libretro_core_options.h b/src/libretro/libretro_core_options.h
+index e50715c..e3606a6 100644
+--- a/src/libretro/libretro_core_options.h
++++ b/src/libretro/libretro_core_options.h
+@@ -185,7 +185,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
+       "disabled"
+    },
+ #endif
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    {
+       "melonds_opengl_renderer",
+       "OpenGL Renderer (Restart)",
+@@ -498,7 +498,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
+       },
+       "Bottom"
+    },
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    {
+       "melonds_hybrid_ratio",
+       "Hybrid Ratio (OpenGL Only)",
+diff --git a/src/libretro/opengl.cpp b/src/libretro/opengl.cpp
+index 3806c75..be1d24d 100644
+--- a/src/libretro/opengl.cpp
++++ b/src/libretro/opengl.cpp
+@@ -39,8 +39,8 @@ static bool setup_opengl(void)
+    if (!OpenGL::BuildShaderProgram(vertex_shader, fragment_shader, shader, "LibretroShader"))
+       return false;
+ 
+-   glBindAttribLocation(shader[2], 0, "vPosition");
+-   glBindAttribLocation(shader[2], 1, "vTexcoord");
++   glBindAttribLocation(shader[2], 0, "pos");
++   glBindAttribLocation(shader[2], 1, "texcoord");
+    glBindFragDataLocation(shader[2], 0, "oColor");
+ 
+    if (!OpenGL::LinkShaderProgram(shader))
+@@ -80,7 +80,12 @@ static bool setup_opengl(void)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+-   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI, 256*3 + 1, 192*2, 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, NULL);
++   // Software frames (BGRX bytes) laid out like the compositor's output: top
++   // screen, two blank lines, bottom screen. The shader samples it normalised.
++   {
++      static const u8 blank[256 * (192*2 + 2) * 4] = {0};
++      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 192*2 + 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, blank);
++   }
+ 
+    refresh_opengl = true;
+ 
+@@ -131,10 +136,17 @@ bool initialize_opengl()
+ {
+    glsm_ctx_params_t params = {0};
+ 
++#ifdef HAVE_OPENGLES3
++   // GLES 3.2: indexed colour masks (glColorMaski) and glFramebufferTexture.
++   params.context_type     = RETRO_HW_CONTEXT_OPENGLES_VERSION;
++   params.major            = 3;
++   params.minor            = 2;
++#else
+    // melonds wants an opengl 3.1 context, so glcore is required for mesa compatibility
+    params.context_type     = RETRO_HW_CONTEXT_OPENGL_CORE;
+    params.major            = 3;
+    params.minor            = 1;
++#endif
+    params.context_reset    = context_reset;
+    params.context_destroy  = context_destroy;
+    params.environ_cb       = environ_cb;
+@@ -370,6 +382,8 @@ void render_opengl_frame(bool sw)
+       glClearColor(0,0,0,0);
+       glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+       setup_opengl_frame_state();
++      // SetRenderSettings leaves framebuffer 0 bound.
++      glBindFramebuffer(GL_FRAMEBUFFER, glsm_get_current_framebuffer());
+    }
+ 
+    if(virtual_cursor)
+@@ -401,9 +415,9 @@ void render_opengl_frame(bool sw)
+ 
+       if (GPU::Framebuffer[frontbuf][0] && GPU::Framebuffer[frontbuf][1])
+       {
+-         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192, GL_RGBA_INTEGER,
++         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192, GL_RGBA,
+                         GL_UNSIGNED_BYTE, GPU::Framebuffer[frontbuf][0]);
+-         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192, 256, 192, GL_RGBA_INTEGER,
++         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192 + 2, 256, 192, GL_RGBA,
+                         GL_UNSIGNED_BYTE, GPU::Framebuffer[frontbuf][1]);
+       }
+    }
+diff --git a/src/libretro/platform.cpp b/src/libretro/platform.cpp
+index 3a4f6f6..0de4b7c 100644
+--- a/src/libretro/platform.cpp
++++ b/src/libretro/platform.cpp
+@@ -418,7 +418,7 @@ namespace Platform
+ #endif
+    }
+ 
+-#ifdef HAVE_OPENGL
++#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES3)
+    void* GL_GetProcAddress(const char* proc)
+    {
+       return (void*)nullptr;
+diff --git a/src/libretro/shaders.h b/src/libretro/shaders.h
+index 5c89331..8bfe0eb 100644
+--- a/src/libretro/shaders.h
++++ b/src/libretro/shaders.h
+@@ -31,7 +31,7 @@ void main()
+ {
+     vec4 fpos;
+     fpos.xy = ((pos * 2.0) / uScreenSize) - 1.0;
+-    fpos.y *= -1;
++    fpos.y *= -1.0;
+     fpos.z = 0.0;
+     fpos.w = 1.0;
+     gl_Position = fpos;

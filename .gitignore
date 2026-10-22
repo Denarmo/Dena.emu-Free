@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# SD-card payload and images (os/payload.py, os/build_sd.py)
+os/build/
+
+# Flutter engine download (tools/toolchain/flutter-engine.txt)
+tools/toolchain/flutter-engine/
+os/image/work/
+os/image/out/
+
+# Desktop host library builds (host/desktop, docs/specs/desktop-shell.md)
+/build/

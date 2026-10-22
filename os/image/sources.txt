@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Pinned sources for the single-card image (os/image/build.sh). The build
+# checks out each tag and refuses a commit other than the one listed.
+# name    url                                                  tag        commit
+linux     https://github.com/gregkh/linux                      v7.1.2     03e2778d1f11de9260543f969e9e888a1c2bf830
+u-boot    https://github.com/u-boot/u-boot                     v2026.01   127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3
+tf-a      https://github.com/ARM-software/arm-trusted-firmware v2.15.0    da738d5eae93af342fdc4995dd3c05acb4c9d757

@@ -1,0 +1,149 @@
+name: dena_emu
+description: "Dena.emu: multi-system emulator with a Material You UI."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.1+12
+
+environment:
+  sdk: ^3.13.5
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  archive: ^4.5.2
+  crypto: ^3.0.7
+  dena_android:
+    path: ../shells/android
+  drift: ^2.35.2
+  drift_flutter: ^0.3.1
+  dynamic_color: ^2.1.0
+  ffi: ^2.2.0
+  file_selector_linux: ^0.9.4+1
+  file_selector_platform_interface: ^2.7.0
+  file_selector_windows: ^0.9.3+6
+  flutter:
+    sdk: flutter
+  material_ui: ^1.7.0
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  sqlite3: ^3.5.2
+
+dev_dependencies:
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.35.1
+  build_runner: ^2.16.2
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  # Cover foil sheen (docs/specs/foil-covers.md).
+  shaders:
+    - shaders/foil.frag
+
+  # Box-art lookup index (tools/boxart/build_index.py; CC-BY-SA-4.0).
+  assets:
+    - assets/boxart/index.tsv.gz
+    # Console-style touch skins (tools/skins/build_skins.py; skins.md 8c).
+    - assets/skins/
+    # Cheat file names in libretro-database (tools/cheats/build_index.py;
+    # CC-BY-SA-4.0; cheats.md).
+    - assets/cheats/index.tsv.gz
+    # Our own launcher cart (pico8-launcher-cart.md).
+    - assets/carts/dena-explore.p8
+
+  # Roboto, bundled because Linux handhelds have no system fonts (theming.md,
+  # Fonts). Static instances of google/fonts Roboto[wdth,wght]; OFL-1.1.
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/roboto/Roboto-Regular.ttf
+        - asset: assets/fonts/roboto/Roboto-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/roboto/Roboto-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/roboto/Roboto-Bold.ttf
+          weight: 700
+    # The Brutalist UI faces (brutalist-ui.md, Type); OFL-1.1. IBM Plex Mono
+    # for everything functional, Archivo Black for UPPERCASE display only.
+    - family: IBM Plex Mono
+      fonts:
+        - asset: assets/fonts/ibm_plex_mono/IBMPlexMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/ibm_plex_mono/IBMPlexMono-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/ibm_plex_mono/IBMPlexMono-Bold.ttf
+          weight: 700
+    - family: Archivo Black
+      fonts:
+        - asset: assets/fonts/archivo_black/ArchivoBlack-Regular.ttf
+    # Dena Icons, our own glyphs (tools/icons/build_icons.py; GPL-3.0).
+    - family: DenaIcons
+      fonts:
+        - asset: assets/fonts/dena_icons/DenaIcons.otf
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - images/a_dot_burr.jpeg
+  #   - images/a_dot_ham.jpeg
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package

@@ -1,0 +1,8 @@
+# Dena.emu system image: busybox init (docs/specs/single-card.md).
+::sysinit:/usr/lib/dena/system/dena-sysinit
+::once:/usr/lib/dena/system/dena-session
+::once:/usr/lib/dena/system/dena-net
+# A shell on the kernel console (the serial port on the handhelds), for the rig.
+::askfirst:-/bin/sh
+::ctrlaltdel:/sbin/reboot
+::shutdown:/usr/lib/dena/system/dena-shutdown

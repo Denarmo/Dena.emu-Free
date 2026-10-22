@@ -1,0 +1,31 @@
+From: Dena.emu <noreply@anthropic.com>
+Subject: [PATCH] arm64: dts: rg35xx-2024: perceptual backlight levels, start at full
+
+Without brightness-levels pwm-backlight builds 2500 CIE levels from the
+40000 ns period, and anything that assumes a 0-255 range only ever reaches
+about 1 % duty. Give the backlight 101 levels on the CIE 1931 curve, with
+the top at full duty and level 1 at 0.5 %, and start at full brightness.
+
+The node is overridden at the end of the file so no earlier patch's context
+changes; the RG35XX SP, Plus, H and 2024 boards all include this file.
+---
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-2024.dts b/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-2024.dts
+index a122c39..c4323b8 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-2024.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-2024.dts
+@@ -572,3 +572,15 @@ &ahub1_mach_hdmi {
+ 	status = "okay";
+ };
+ 
++/*
++ * Without a table pwm-backlight makes 2500 levels and the launcher only knew
++ * 0-255 of them, so its 100 % was about 1 % duty. 101 levels on the CIE 1931
++ * lightness curve (L* in 10 % steps, the first point raised to 0.5 % duty,
++ * 10 steps between points): level n is n % in the launcher, the top is full
++ * duty, and the kernel starts at full brightness.
++ */
++&backlight {
++	brightness-levels = <50 113 299 624 1125 1842 2812 4075 5668 7630 10000>;
++	num-interpolated-steps = <10>;
++	default-brightness-level = <100>;
++};

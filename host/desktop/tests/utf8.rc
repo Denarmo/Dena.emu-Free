@@ -1,0 +1,3 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Embeds utf8.manifest (RT_MANIFEST, id 1) in desktop_host_tests.exe.
+1 24 "utf8.manifest"

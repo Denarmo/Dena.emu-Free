@@ -1,0 +1,66 @@
+# Flatpak manifest for Dena.emu on SteamOS and desktop Linux
+# (docs/dev/release-linux.md). tools/release/build-linux.sh stages the Flutter
+# release bundle (with lib/libdena_host.so and lib/cores/) into
+# build/release-linux/bundle first; this manifest only packages it.
+#
+# The runtime must match the SDK the cores and the host library are built in:
+# cores/desktop-runtime.txt (freedesktop 26.08). GL and Vulkan drivers come
+# from the runtime's org.freedesktop.Platform.GL extension, which Flatpak
+# installs and mounts on its own; nothing to declare here.
+app-id: io.github.denarmo.DenaEmu
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+command: dena-emu
+finish-args:
+  # Display: Wayland first (Steam Deck desktop mode, gamescope), X11 fallback.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # GPU, plus /dev/input and /dev/hidraw for SDL3 gamepads (hotplug, rumble,
+  # gyro, DualSense/Switch Pro over HIDAPI). --device=input alone misses hidraw.
+  - --device=all
+  # Audio: SDL3 through the PulseAudio socket, which PipeWire serves on SteamOS
+  # (pipewire-pulse); Flatpak has no separate PipeWire playback permission.
+  - --socket=pulseaudio
+  # RomM, RetroAchievements, the PICO-8 BBS, netplay, link cable on Wi-Fi.
+  - --share=network
+  # logind: save the running game before the Deck or PC sleeps
+  # (docs/specs/deck-presets.md, Suspend and resume).
+  - --system-talk-name=org.freedesktop.login1
+  # No home or media access: game folders and files are picked with the file
+  # chooser portal (granted per folder, kept across restarts). Data lives in
+  # ~/.var/app/io.github.denarmo.DenaEmu/data (app_dirs.dart, FLATPAK_ID).
+build-options:
+  # The bundle is a prebuilt Flutter release; the cores are already stripped.
+  no-debuginfo: true
+  strip: false
+modules:
+  - name: dena-emu
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/dena-emu
+      - cp -a bundle/. /app/lib/dena-emu/
+      - install -Dm755 dena-emu.sh /app/bin/dena-emu
+      - install -Dm644 io.github.denarmo.DenaEmu.desktop -t /app/share/applications
+      - install -Dm644 io.github.denarmo.DenaEmu.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 logo.svg /app/share/icons/hicolor/scalable/apps/io.github.denarmo.DenaEmu.svg
+      - install -Dm644 icon-512.png /app/share/icons/hicolor/512x512/apps/io.github.denarmo.DenaEmu.png
+    sources:
+      # For Flathub this becomes the release's portable tar.gz (type: archive
+      # with a sha256), since Flathub builds offline from fixed sources.
+      - type: dir
+        path: ../../../build/release-linux/bundle
+        dest: bundle
+      - type: script
+        dest-filename: dena-emu.sh
+        commands:
+          - exec /app/lib/dena-emu/dena_emu "$@"
+      - type: file
+        path: io.github.denarmo.DenaEmu.desktop
+      - type: file
+        path: io.github.denarmo.DenaEmu.metainfo.xml
+      - type: file
+        path: ../../../docs/branding/logo.svg
+      - type: file
+        path: ../../../docs/branding/icon-512.png

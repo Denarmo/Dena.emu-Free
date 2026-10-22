@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Packages extracted (not configured: mmdebstrap --variant=extract) into the
+# system image. Names exist in both Debian 13 (the default base) and Ubuntu
+# 24.04 (used for the boot smoke test). docs/specs/single-card.md
+busybox-static
+libc6
+libstdc++6
+libgcc-s1
+libdrm2
+libgbm1
+libegl1
+libgles2
+libegl-mesa0
+libgl1-mesa-dri
+libasound2t64
+# alsa.conf: alsa-lib resolves every device name (hw:N, plughw:N) through it.
+libasound2-data
+libudev1
+fdisk
+util-linux
+exfatprogs
+# Wi-Fi: wpa_supplicant (and wpa_cli); the regulatory database is taken from
+# wireless-regdb and built into the kernel by build.sh.
+wpasupplicant
+wireless-regdb

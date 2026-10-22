@@ -1,0 +1,5 @@
+# Golden hashes for the PICO-8 runtime (fake-08) on our test cart. Spec: docs/specs/pico8.md
+# pico8-press holds O (RetroPad B) from frame 30: dark-blue background.
+# name        core            rom      frames replay                frame_hash audio_hash
+pico8-idle    fake08_libretro test.p8  90     -                     46b855aec7cc9942 caa88e458e15b395
+pico8-press   fake08_libretro test.p8  90     pico8-o.dreplay       945e067f68eba997 caa88e458e15b395

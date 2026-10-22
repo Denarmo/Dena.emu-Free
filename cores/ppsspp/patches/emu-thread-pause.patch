@@ -1,0 +1,119 @@
+diff --git a/Common/GPU/OpenGL/GLRenderManager.cpp b/Common/GPU/OpenGL/GLRenderManager.cpp
+index 0967e51..340bf4c 100644
+--- a/Common/GPU/OpenGL/GLRenderManager.cpp
++++ b/Common/GPU/OpenGL/GLRenderManager.cpp
+@@ -1,5 +1,7 @@
+ #include "ppsspp_config.h"
+ #include "GLRenderManager.h"
++
++#include <chrono>
+ #include "Common/GPU/OpenGL/GLFeatures.h"
+ #include "Common/GPU/thin3d.h"
+ #include "Common/Thread/ThreadUtil.h"
+@@ -169,6 +171,36 @@ bool GLRenderManager::ThreadFrame() {
+ 	return true;
+ }
+ 
++bool GLRenderManager::ThreadFrameFor(int timeoutMs) {
++	if (!runCompileThread_) {
++		return false;
++	}
++	while (true) {
++		GLRRenderThreadTask *task = nullptr;
++		{
++			std::unique_lock<std::mutex> lock(pushMutex_);
++			if (renderThreadQueue_.empty() &&
++				!pushCondVar_.wait_for(lock, std::chrono::milliseconds(timeoutMs), [this] { return !renderThreadQueue_.empty(); })) {
++				return false;
++			}
++			task = std::move(renderThreadQueue_.front());
++			renderThreadQueue_.pop();
++		}
++		if (task->runType == GLRRunType::EXIT) {
++			delete task;
++			std::unique_lock<std::mutex> lock(syncMutex_);
++			syncCondVar_.notify_one();
++			syncDone_ = true;
++			return true;
++		}
++		bool swapped = Run(*task);
++		delete task;
++		if (swapped) {
++			return true;
++		}
++	}
++}
++
+ void GLRenderManager::StopThread() {
+ 	// There's not really a lot to do here anymore.
+ 	INFO_LOG(Log::G3D, "GLRenderManager::StopThread()");
+diff --git a/Common/GPU/OpenGL/GLRenderManager.h b/Common/GPU/OpenGL/GLRenderManager.h
+index d649704..9efe510 100644
+--- a/Common/GPU/OpenGL/GLRenderManager.h
++++ b/Common/GPU/OpenGL/GLRenderManager.h
+@@ -238,6 +238,8 @@ class GLRenderManager {
+ 	void ThreadStart(Draw::DrawContext *draw);
+ 	void ThreadEnd();
+ 	bool ThreadFrame();  // Returns true if it did anything. False means the queue was empty.
++	// Dena.emu: like ThreadFrame, but returns false once the queue stays empty for timeoutMs.
++	bool ThreadFrameFor(int timeoutMs);
+ 
+ 	void SetErrorCallback(ErrorCallbackFn callback, void *userdata) {
+ 		queueRunner_.SetErrorCallback(callback, userdata);
+diff --git a/libretro/LibretroGLContext.h b/libretro/LibretroGLContext.h
+index 66d8d64..fb365fd 100644
+--- a/libretro/LibretroGLContext.h
++++ b/libretro/LibretroGLContext.h
+@@ -26,6 +26,7 @@ class LibretroGLContext : public LibretroHWRenderContext {
+ 
+ 	void ThreadStart() override { renderManager_->ThreadStart(draw_); }
+ 	bool ThreadFrame() override { return renderManager_->ThreadFrame(); }
++	bool ThreadFramePoll() override { return renderManager_->ThreadFrameFor(1); }
+ 	void ThreadEnd() override { renderManager_->ThreadEnd(); }
+ 	void StopThread() override {
+ 		renderManager_->StopThread();
+diff --git a/libretro/LibretroGLCoreContext.h b/libretro/LibretroGLCoreContext.h
+index dbe65dc..ac11a9d 100644
+--- a/libretro/LibretroGLCoreContext.h
++++ b/libretro/LibretroGLCoreContext.h
+@@ -22,6 +22,7 @@ class LibretroGLCoreContext : public LibretroHWRenderContext {
+ 
+ 	void ThreadStart() override { renderManager_->ThreadStart(draw_); }
+ 	bool ThreadFrame() override { return renderManager_->ThreadFrame(); }
++	bool ThreadFramePoll() override { return renderManager_->ThreadFrameFor(1); }
+ 	void ThreadEnd() override { renderManager_->ThreadEnd(); }
+ 	void StopThread() override {
+ 		renderManager_->StopThread();
+diff --git a/libretro/LibretroGraphicsContext.h b/libretro/LibretroGraphicsContext.h
+index 96e7bbd..4925a73 100644
+--- a/libretro/LibretroGraphicsContext.h
++++ b/libretro/LibretroGraphicsContext.h
+@@ -25,6 +25,8 @@ class LibretroGraphicsContext : public GraphicsContext {
+ 	virtual void SetRenderTarget() {}
+ 	virtual GPUCore GetGPUCore() = 0;
+ 	virtual const char *Ident() = 0;
++	// Dena.emu: runs render work queued by the emu thread without blocking forever.
++	virtual bool ThreadFramePoll() { return false; }
+ 
+ 	void Shutdown() override {
+ 		DestroyDrawContext();
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+index 852fa6b..a3ac7b6 100644
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -1417,10 +1417,12 @@ namespace Libretro
+ 
+       emuThreadState = EmuThreadState::PAUSE_REQUESTED;
+ 
+-      ctx->ThreadFrame(); // Eat 1 frame
+-
++      // Dena.emu: keep running the emu thread's render work until it pauses.
++      // Eating a single frame deadlocks when its frame still waits on a sync
++      // (framebuffer readbacks), which hung save states and resume.
+       while (emuThreadState != EmuThreadState::PAUSED)
+-         sleep_ms(1, "libretro-pause-poll");
++         if (!ctx->ThreadFramePoll())
++            sleep_ms(1, "libretro-pause-poll");
+    }
+ 
+ } // namespace Libretro

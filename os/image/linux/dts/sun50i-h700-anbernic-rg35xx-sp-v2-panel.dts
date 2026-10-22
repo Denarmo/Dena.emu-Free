@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/*
+ * Anbernic RG35XX SP with the second-revision LCD panel: the same board as
+ * sun50i-h700-anbernic-rg35xx-sp.dts, but the panel needs its own init
+ * sequence (firmware panels/anbernic,rg35xx-sp-v2-panel.panel).
+ * Dena.emu, docs/specs/single-card.md.
+ */
+
+#include "sun50i-h700-anbernic-rg35xx-sp.dts"
+
+/ {
+	model = "Anbernic RG35XX SP (v2 panel)";
+};
+
+&panel {
+	compatible = "anbernic,rg35xx-sp-v2-panel", "panel-mipi-dpi-spi";
+};

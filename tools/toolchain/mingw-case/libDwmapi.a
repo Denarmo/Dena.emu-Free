@@ -1,0 +1,2 @@
+/* Case shim: MSVC-style -lDwmapi for MinGW's libdwmapi.a (GNU ld script). */
+INPUT(-ldwmapi)

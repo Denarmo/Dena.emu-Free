@@ -1,0 +1,4 @@
+# Golden hashes for the SNES core (bsnes) on our test ROM. Spec: docs/specs/cores-m2.md
+# name        core           rom       frames replay                frame_hash audio_hash
+snes-idle     bsnes_libretro test.sfc  70     -                     02d4050f57791d4a c667f6dd4fdf1b25
+snes-press    bsnes_libretro test.sfc  60     latency-press.dreplay d75638fa9ad81d4a b862661d89b20f25

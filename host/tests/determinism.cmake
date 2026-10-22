@@ -1,0 +1,26 @@
+# Runs the harness twice with a replay and once without; the replayed runs must
+# match each other and differ from the idle run.
+function(run_harness out)
+  execute_process(COMMAND ${HARNESS} run --core ${CORE} --frames 180 ${ARGN}
+    OUTPUT_VARIABLE o RESULT_VARIABLE rc OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "harness exited ${rc}: ${o}")
+  endif()
+  set(${out} "${o}" PARENT_SCOPE)
+endfunction()
+
+run_harness(a --replay ${REPLAY})
+run_harness(b --replay ${REPLAY})
+run_harness(idle)
+message(STATUS "replay: ${a}")
+message(STATUS "idle:   ${idle}")
+if(NOT a STREQUAL b)
+  message(FATAL_ERROR "same replay gave different results:\n${a}\n${b}")
+endif()
+string(REGEX MATCH "frame_hash=[0-9a-f]+" fa "${a}")
+string(REGEX MATCH "frame_hash=[0-9a-f]+" fi "${idle}")
+string(REGEX MATCH "audio_hash=[0-9a-f]+" aa "${a}")
+string(REGEX MATCH "audio_hash=[0-9a-f]+" ai "${idle}")
+if(fa STREQUAL fi OR aa STREQUAL ai)
+  message(FATAL_ERROR "input had no effect on video or audio")
+endif()

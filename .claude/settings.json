@@ -1,0 +1,64 @@
+{
+  "enableWorkflows": true,
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"
+  },
+  "skipWorkflowUsageWarning": true,
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "PowerShell(*)",
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "Bash(gh repo create:*)",
+      "Bash(gh pr:*)",
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(git branch -f main:*)",
+      "PowerShell(gh repo create:*)",
+      "PowerShell(gh pr:*)",
+      "PowerShell(git push:*)",
+      "PowerShell(git merge:*)",
+      "PowerShell(git branch -f main:*)",
+      "PowerShell(*gradlew.bat --stop*)",
+      "PowerShell(git *)",
+      "PowerShell(gh pr *)",
+      "PowerShell(Start-Process powershell -Verb RunAs *)",
+      "Bash(powershell.exe -Command Start-Process powershell -Verb RunAs *)",
+      "PowerShell(gh pr merge *)",
+      "Bash(gh pr merge *)",
+      "PowerShell(gh release *)",
+      "Bash(gh release *)",
+      "Bash(git fetch:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(flutter:*)",
+      "Bash(dart:*)"
+    ]
+  },
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "github.com/Denarmo and all repositories under it are the user's own repositories."
+    ],
+    "allow": [
+      "$defaults",
+      "Merging pull requests in repositories owned by github.com/Denarmo is pre-approved by the user; Claude sessions review each PR first."
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+# Golden hashes for dena_testcore. Spec: docs/specs/test-harness.md
+# name     core          rom frames replay                frame_hash       audio_hash
+idle-1     dena_testcore -   1      -                     8219d61fc70a5f38 402839d43b6b22a5
+idle-300   dena_testcore -   300    -                     0e920b0dbfea4e6c 4267d889a6cc0055
+walk-180   dena_testcore -   180    testcore-walk.dreplay b4a977e75e9d4617 f2bd6517ea58ec35

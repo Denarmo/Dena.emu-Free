@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Dena.emu
+GenericName=Game emulator
+Comment=Play your own retro games with a controller, keyboard or mouse
+Exec=dena-emu %f
+MimeType=application/x-nes-rom;application/x-snes-rom;application/x-gameboy-rom;application/x-gameboy-color-rom;application/x-gba-rom;application/x-nintendo-ds-rom;application/x-n64-rom;application/x-cue;application/x-cd-image;application/x-compressed-iso;application/x-gd-rom-cue;application/x-discjuggler-cd-image;application/x-gamecube-rom;application/x-wii-rom;application/x-wbfs;
+Icon=io.github.denarmo.DenaEmu
+Terminal=false
+Categories=Game;Emulator;
+Keywords=emulator;libretro;retro;nes;snes;gameboy;gba;n64;ds;playstation;psp;saturn;dreamcast;gamecube;wii;pico-8;
+StartupWMClass=io.github.denarmo.DenaEmu
+SingleMainWindow=true

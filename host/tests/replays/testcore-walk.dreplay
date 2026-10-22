@@ -1,0 +1,5 @@
+# Test replay for dena_testcore (RetroPad bits: B=0 UP=4 DOWN=5 LEFT=6 RIGHT=7 A=8)
+0 0 0x0080
+30 0 0x0180
+60 0 0x0021
+100 0 0x0000

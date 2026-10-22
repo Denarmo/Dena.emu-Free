@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ backup and device transfer: same rule as backup_rules.xml. -->
+<data-extraction-rules/>

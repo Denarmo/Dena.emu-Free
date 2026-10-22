@@ -1,0 +1,55 @@
+From: Dena.emu
+Subject: [PATCH] ASoC: sun4i-codec: turn the speaker off while headphones are plugged
+
+On the H700 handhelds the speaker and the headphone jack both hang off
+LINEOUT through an analog mux, and the headphone detect GPIO only switched
+the "Headphone" DAPM pin. The "Speaker" pin stayed on, so the amplifier
+(PI5) and its supply kept running next to the headphones.
+
+On boards with a speaker amplifier GPIO, add "Speaker" to the jack pins
+inverted: plugging headphones powers the speaker path down through DAPM
+(which drops the amplifier GPIO and, with the 0163 patch, its supply), and
+unplugging brings it back.
+
+Assisted-by: Claude
+---
+--- a/sound/soc/sunxi/sun4i-codec.c
++++ b/sound/soc/sunxi/sun4i-codec.c
+@@ -1623,6 +1623,16 @@ static struct snd_soc_jack_pin sun4i_headphone_jack_pins[] = {
+ 	{ .pin = "Headphone", .mask = SND_JACK_HEADPHONE },
+ };
+ 
++/*
++ * Boards with a speaker amplifier: a plugged headphone also turns the
++ * speaker path off, so the amplifier and its supply power down instead of
++ * playing (or hissing) next to the headphones.
++ */
++static struct snd_soc_jack_pin sun4i_headphone_speaker_jack_pins[] = {
++	{ .pin = "Headphone", .mask = SND_JACK_HEADPHONE },
++	{ .pin = "Speaker", .mask = SND_JACK_HEADPHONE, .invert = 1 },
++};
++
+ static struct snd_soc_jack_gpio sun4i_headphone_jack_gpio = {
+ 	.name = "hp-det",
+ 	.report = SND_JACK_HEADPHONE,
+@@ -1636,11 +1646,18 @@ static int sun4i_codec_machine_init(struct snd_soc_pcm_runtime *rtd)
+ 	int ret;
+ 
+ 	if (scodec->gpio_hp) {
++		struct snd_soc_jack_pin *pins = sun4i_headphone_jack_pins;
++		unsigned int num_pins = ARRAY_SIZE(sun4i_headphone_jack_pins);
++
++		if (scodec->gpio_pa) {
++			pins = sun4i_headphone_speaker_jack_pins;
++			num_pins = ARRAY_SIZE(sun4i_headphone_speaker_jack_pins);
++		}
++
+ 		ret = snd_soc_card_jack_new_pins(card, "Headphone Jack",
+ 						 SND_JACK_HEADPHONE,
+ 						 &sun4i_headphone_jack,
+-						 sun4i_headphone_jack_pins,
+-						 ARRAY_SIZE(sun4i_headphone_jack_pins));
++						 pins, num_pins);
+ 		if (ret) {
+ 			dev_err(rtd->dev,
+ 				"Headphone jack creation failed: %d\n", ret);

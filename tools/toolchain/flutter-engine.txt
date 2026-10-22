@@ -1,0 +1,26 @@
+# Flutter engine for the handheld launcher (embedder.md, toolchain-linux.md).
+# Must match the app's Flutter SDK exactly: flutter 3.47.7, Dart 3.13.5,
+# engine (bin/internal/engine.version) below. A Dart AOT snapshot only runs
+# on the engine build its gen_snapshot came from.
+flutter=3.47.7
+engine=deb287481e3ce9468f3434937ced4240a70539ca
+
+# Release (AOT): what the handheld ships. Google publishes no release
+# embedder engine for linux-arm64, so it comes from ardera's prebuilt engine
+# binaries (BSD-3-Clause engine, built from the unmodified engine source with
+# --embedder-for-target; MIT repo). The tag holds arm64/libflutter_engine.so.release,
+# arm64/gen_snapshot_linux_x64_release (x64 Linux host, arm64 target) and
+# arm64/icudtl.dat. `python tools/toolchain/flutter_engine.py` fetches them
+# into tools/toolchain/flutter-engine/release/ (git-ignored).
+release_repo=https://github.com/ardera/flutter-engine-binaries-for-arm
+release_tag=engine_deb287481e3ce9468f3434937ced4240a70539ca
+release_commit=054a6d0328c72e8e2e70f3e092ea5ba91b3cf8fd
+release_engine_sha256=65b9d9b57fba49e4e0b57c18c06b6df65c1b7f22525013436d9c8901f2737ab3
+release_gen_snapshot_sha256=57f7e0191e02b1735dfdcd089469e4fa0457a0d68591a057b2cc8999b4221abf
+release_icu_sha256=9f48c7f9c7c94d516a14870707e910ab94d75ae640ff6842c4af53276cd26ebe
+
+# Debug (JIT), development only: Google's linux-arm64 embedder engine. The app
+# then runs from kernel_blob.bin, compiled on the device at every start.
+# Fetched by hand into tools/toolchain/flutter-engine/debug-embedder/.
+url=https://storage.googleapis.com/flutter_infra_release/flutter/deb287481e3ce9468f3434937ced4240a70539ca/linux-arm64/linux-arm64-embedder.zip
+sha256=1b5e2f0f1d8163f1580396e53e4a2e047f7e2e72e88043cb74b4c31d1cb32576

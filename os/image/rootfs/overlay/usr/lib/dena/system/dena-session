@@ -1,0 +1,76 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Dena.emu system image: runs the launcher through the boot hook
+# (os/scripts/dena-boot.sh) with the app from the system image, then powers
+# off: there is no stock system to return to. docs/specs/single-card.md
+set -u
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+. /usr/lib/dena/system/dena-lib.sh
+
+# The panel can probe after init starts (SPI panel, firmware, deferred
+# probe): wait for a connected DRM connector, checking often so a panel that
+# is already up costs nothing.
+wait_display() {
+  i=0
+  while [ $i -lt 100 ]; do
+    grep -qx connected /sys/class/drm/card*-*/status 2>/dev/null && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# The launcher exits right after asking for USB storage mode; if it is still
+# up 5 s later (stuck closing), it is stopped so the mode can start.
+usb_watch() {
+  while [ ! -f "$RUN/usb-storage" ]; do sleep 1; done
+  i=0
+  while pidof dena-launcher > /dev/null && [ $i -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  pidof dena-launcher > /dev/null || exit 0
+  log "USB: launcher still running, stopping it"
+  killall dena-launcher 2> /dev/null
+  sleep 2
+  killall -KILL dena-launcher 2> /dev/null
+}
+
+if grep -q "$CARD" /proc/mounts; then
+  if wait_display; then log "display connected"; else log "no connected display after 10 s"; fi
+  save_diag "before the launcher"
+  # The launcher takes the display over; the splash stays up until it does.
+  splash quit
+  while :; do
+    # Only a request made during this launcher run counts.
+    rm -f "$RUN/usb-storage"
+    log "session start"
+    usb_watch &
+    watch=$!
+    # dena-powerd powers off through init, so dena-shutdown unmounts the card.
+    DENA_POWEROFF=poweroff DENA_CARD="$CARD" DENA_APP=/usr/lib/dena \
+      sh /usr/lib/dena/bin/dena-boot.sh
+    kill "$watch" 2>/dev/null
+    log "session end: $(tail -n 1 "$CARD/Dena/user/boot.log" 2>/dev/null)"
+    # The launcher asks for USB storage mode by leaving this file and exiting;
+    # it starts again afterwards.
+    [ -f "$RUN/usb-storage" ] || break
+    [ -e "$RUN/shutdown" ] && break
+    log "USB storage mode"
+    /usr/lib/dena/system/dena-usb-storage || log "USB storage mode not started"
+    grep -q " $CARD " /proc/mounts || break
+  done
+else
+  splash message NO GAMES PARTITION
+  log "no games partition, nothing to start"
+  sleep 5
+fi
+
+# A power off from dena-powerd is already under way (dena-shutdown).
+[ -e "$RUN/shutdown" ] && exit 0
+if grep -qw dena.debug /proc/cmdline; then
+  log "dena.debug: staying up for the console shell"
+  exit 0
+fi
+log "powering off"
+poweroff

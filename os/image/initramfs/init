@@ -1,0 +1,75 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Dena.emu initramfs (single-card boot, docs/specs/single-card.md).
+# Finds the DENA-BOOT partition, loop-mounts the read-only system image from
+# it, puts a tmpfs overlay on top and hands over to busybox init in there.
+# Kernel command line:
+#   dena.boot=<LABEL=x|UUID=x|/dev/x>   boot partition (default LABEL=DENA-BOOT)
+#   dena.system=<file>                  system image on it (default dena-system.squashfs)
+#   dena.debug                          on failure, open a shell instead of powering off
+# POSIX sh, busybox-static applets only.
+export PATH=/bin
+
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+
+boot="LABEL=DENA-BOOT"
+system="dena-system.squashfs"
+debug=""
+for arg in $(cat /proc/cmdline); do
+  case "$arg" in
+    dena.boot=*) boot="${arg#dena.boot=}" ;;
+    dena.system=*) system="${arg#dena.system=}" ;;
+    dena.debug) debug=1 ;;
+  esac
+done
+
+log() { echo "dena-initramfs: $*" > /dev/console; }
+
+fail() {
+  log "$*"
+  if [ -n "$debug" ]; then
+    log "dena.debug: starting a shell"
+    exec sh < /dev/console > /dev/console 2>&1
+  fi
+  log "powering off in 10 s"
+  sleep 10
+  poweroff -f
+}
+
+# The SD card can take a moment to appear.
+dev=""
+i=0
+while [ $i -lt 100 ]; do
+  case "$boot" in
+    /dev/*) [ -b "$boot" ] && dev="$boot" ;;
+    *) dev="$(findfs "$boot" 2>/dev/null)" ;;
+  esac
+  [ -n "$dev" ] && break
+  sleep 0.1
+  i=$((i + 1))
+done
+[ -n "$dev" ] || fail "boot partition $boot not found"
+log "boot partition $dev"
+
+mkdir -p /boot /lower /upper /newroot
+mount -t vfat -o ro "$dev" /boot || fail "cannot mount $dev"
+# An interrupted system update leaves the old image in place (see dena-sysupdate).
+[ -f "/boot/$system" ] || fail "no $system on $dev"
+mount -t squashfs -o loop,ro "/boot/$system" /lower || fail "cannot mount $system"
+mount -t tmpfs -o mode=0755 tmpfs /upper
+mkdir -p /upper/rw /upper/work
+mount -t overlay overlay -o lowerdir=/lower,upperdir=/upper/rw,workdir=/upper/work /newroot ||
+  fail "cannot mount the overlay"
+
+# Keep the boot partition and the system image reachable from the new root.
+mkdir -p /newroot/run/dena/boot /newroot/run/dena/system
+mount --move /boot /newroot/run/dena/boot
+mount --move /lower /newroot/run/dena/system
+echo "DENA_BOOT_DEV=$dev" > /newroot/run/dena/env
+log "system $system mounted, starting init"
+
+umount /proc /sys
+mount --move /dev /newroot/dev
+exec switch_root /newroot /sbin/init

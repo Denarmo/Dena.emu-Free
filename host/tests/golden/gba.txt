@@ -1,0 +1,6 @@
+# Golden hashes for the GBA core (mGBA) on our latency test ROM.
+# Spec: docs/specs/latency-spike.md
+# name             core          rom         frames replay                          frame_hash audio_hash
+latency-idle       mgba_libretro latency.gba 60     -                                         ceffb0e3c36c35d5 70fa414ec58a3f25
+latency-press      mgba_libretro latency.gba 60     latency-press.dreplay                     ba587e78d16545d5 1330bd9241622221
+latency-release    mgba_libretro latency.gba 90     latency-press-release.dreplay             ceffb0e3c36c35d5 7caff0ba9ec5f199

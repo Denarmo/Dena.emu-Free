@@ -1,0 +1,237 @@
+# Spec: docs/specs/ci.md
+name: CI
+
+# Manual only (user, 2026-10-16): checks run locally with tools/ci/local.sh;
+# GitHub is used to push commits, not to run checks.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.47.7"
+
+jobs:
+  licenses:
+    name: License gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: app
+      - run: python3 tools/licenses/check_licenses.py
+
+  host:
+    name: Host harness (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"name":"linux-x86_64","os":"ubuntu-24.04"},{"name":"linux-aarch64","os":"ubuntu-24.04-arm"},{"name":"macos-arm64","os":"macos-15"}]' || github.event_name == 'push' && '[{"name":"linux-x86_64","os":"ubuntu-24.04"},{"name":"linux-aarch64","os":"ubuntu-24.04-arm"}]' || '[{"name":"linux-x86_64","os":"ubuntu-24.04"}]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: cores/build
+          key: cores-${{ matrix.name }}-${{ hashFiles('cores/*/build.sh', 'cores/libretro-make.sh') }}
+      - run: |
+          for c in mgba fceumm bsnes; do bash cores/$c/build.sh host cores/build/host; done
+      - run: >
+          cmake -S host -B host/build -DCMAKE_BUILD_TYPE=Release
+          -DDENA_CORES_DIR=${{ github.workspace }}/cores/build/host
+      - run: cmake --build host/build --parallel
+      - run: ctest --test-dir host/build --output-on-failure
+
+  android-cores:
+    name: Android cores (${{ matrix.abi }})
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
+    strategy:
+      matrix:
+        abi: [arm64-v8a, x86_64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: cores/build
+          key: cores-android-${{ matrix.abi }}-${{ hashFiles('cores/*/build.sh', 'cores/libretro-make.sh') }}
+      - run: |
+          for c in mgba fceumm bsnes; do
+            ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"               bash cores/$c/build.sh android-${{ matrix.abi }} cores/build/android/${{ matrix.abi }}
+          done
+      - uses: actions/upload-artifact@v5
+        with:
+          name: cores-android-${{ matrix.abi }}
+          path: cores/build/android/${{ matrix.abi }}/
+
+  host-armhf:
+    name: Host harness (linux-armhf, qemu)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf qemu-user-static binfmt-support
+      - run: >
+          cmake -S host -B host/build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=cmake/armhf-linux.cmake
+      - run: cmake --build host/build --parallel
+      - run: ctest --test-dir host/build --output-on-failure
+        env:
+          QEMU_LD_PREFIX: /usr/arm-linux-gnueabihf
+
+  rig:
+    name: Rig scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -s tools/rig -v
+
+  flutter:
+    name: Flutter analyze and tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: app
+      - run: dart format --output=none --set-exit-if-changed lib test
+        working-directory: app
+      - run: flutter analyze
+        working-directory: app
+      - run: flutter test
+        working-directory: app
+      - if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: golden-failures
+          path: app/test/failures/
+
+  android:
+    name: Android build
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
+    needs: flutter
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - uses: actions/cache@v4
+        with:
+          path: cores/build
+          key: cores-apk-${{ hashFiles('cores/*/build.sh', 'cores/libretro-make.sh') }}
+      - run: flutter build apk --debug
+        working-directory: app
+      - name: Kotlin unit tests (shells/android)
+        run: ./gradlew :dena_android:testDebugUnitTest
+        working-directory: app/android
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dena-emu-debug-apk
+          path: app/build/app/outputs/flutter-apk/app-debug.apk
+
+  android-emulator:
+    name: Latency spike on Android emulator
+    if: github.event_name == 'workflow_dispatch'
+    needs: flutter
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Free disk space for the emulator
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc             /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift
+          df -h /
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      # Build first (cores, CMake, Gradle) so the emulator and the build don't
+      # compete for the runner's CPU and memory; the test run reuses the outputs.
+      - uses: actions/cache@v4
+        with:
+          path: cores/build
+          key: cores-apk-${{ hashFiles('cores/*/build.sh', 'cores/libretro-make.sh') }}
+      - run: flutter build apk --debug
+        working-directory: app
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          ram-size: 2048M
+          arch: x86_64
+          disable-animations: true
+          disk-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics
+          working-directory: app
+          script: flutter test integration_test/spike_test.dart > ../spike-test.log 2>&1; rc=$?; cat ../spike-test.log; exit $rc
+      - if: always()
+        run: grep DENA_METRICS spike-test.log >> "$GITHUB_STEP_SUMMARY" || true
+
+  linux-app:
+    name: Linux desktop build
+    if: github.event_name != 'pull_request'
+    needs: flutter
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter build linux --debug
+        working-directory: app
+
+  ios:
+    name: iOS build (no signing)
+    if: github.event_name == 'workflow_dispatch'
+    needs: flutter
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter build ios --debug --no-codesign
+        working-directory: app

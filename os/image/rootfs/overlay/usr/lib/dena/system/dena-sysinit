@@ -1,0 +1,102 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Dena.emu system image, busybox init sysinit step (docs/specs/single-card.md):
+# starts the splash, mounts the kernel file systems and the games partition.
+# On the first boot the card has only DENA-BOOT, so this creates partition 2
+# over the rest of the card, formats it exFAT (label DENA) and lays out the
+# folders, with a progress screen.
+set -u
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+. /usr/lib/dena/system/dena-lib.sh
+mkdir -p /dev/pts /dev/shm "$CARD" "$RUN"
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o mode=1777 tmpfs /dev/shm
+mount -t tmpfs -o mode=1777 tmpfs /tmp
+
+# The splash first: it waits in the background for the panel, which probes
+# late, and shows the latest screen from $SPLASH as soon as it is up.
+if ! cmdline_diag && [ -x "$SPLASH_BIN" ]; then
+  splash logo
+  "$SPLASH_BIN" --daemon "$SPLASH" --wait 20 < /dev/null > /dev/null 2>&1 &
+fi
+log "sysinit"
+
+hostname -F /etc/hostname
+ip link set lo up 2>/dev/null  # loopback for local services (the app's own sockets)
+ln -sf /proc/self/fd /dev/fd 2>/dev/null
+
+DENA_BOOT_DEV=""
+[ -f "$RUN/env" ] && . "$RUN/env"
+[ -n "$DENA_BOOT_DEV" ] || { log "boot device unknown"; exit 0; }
+
+# mmcblk0p1 -> mmcblk0 + p2; vda1 / sda1 -> vda / sda + 2.
+part="${DENA_BOOT_DEV#/dev/}"
+case "$part" in
+  *[0-9]p[0-9]*) disk="${part%p*}"; data="/dev/${disk}p2" ;;
+  *) disk="$(echo "$part" | sed 's/[0-9]*$//')"; data="/dev/${disk}2" ;;
+esac
+
+# True when the partition has no boot sector at all (no 0x55AA signature): a
+# partition we created whose formatting never finished. Anything else is the
+# user's and is never formatted.
+blank() {
+  [ "$(dd if="$1" bs=1 skip=510 count=2 2>/dev/null | od -An -tx1 | tr -d ' ')" != "55aa" ]
+}
+
+if [ ! -b "$data" ]; then
+  # Partition 2 starts right after DENA-BOOT (never in the gap before it: the
+  # boot loader lives there) and takes the rest of the card. Type 7 (exFAT).
+  splash progress 5 PREPARING YOUR CARD
+  p1="/sys/class/block/$part"
+  start=$(( $(cat "$p1/start") + $(cat "$p1/size") ))
+  log "first boot: creating the games partition on /dev/$disk at sector $start"
+  echo "start=$start, type=7" | sfdisk --quiet --no-reread --no-tell-kernel --append "/dev/$disk" \
+    >> "$LOG" 2>&1 || log "sfdisk failed"
+  # The boot partition is in use, so the kernel can't re-read the whole table:
+  # add the new partition to it on its own (partx; addpart is gone from
+  # util-linux in Debian 13).
+  partx --add --nr 2:2 "/dev/$disk" >> "$LOG" 2>&1 || log "partx failed"
+  i=0
+  while [ ! -b "$data" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  splash progress 30 PREPARING YOUR CARD
+  if [ -b "$data" ] && mkfs.exfat -L DENA "$data" >> "$LOG" 2>&1; then
+    log "first boot: card expanded ($data)"
+  else
+    log "first boot: could not create $data"
+  fi
+  splash progress 70 PREPARING YOUR CARD
+elif blank "$data"; then
+  log "games partition $data was never formatted, formatting it"
+  splash progress 30 PREPARING YOUR CARD
+  mkfs.exfat -L DENA "$data" >> "$LOG" 2>&1 || log "mkfs.exfat failed"
+  splash progress 70 PREPARING YOUR CARD
+fi
+
+# exFAT as created above, or FAT32 if the user reformatted it on a PC.
+if mount -t exfat -o noatime "$data" "$CARD" 2>/dev/null ||
+   mount -t vfat -o noatime,utf8 "$data" "$CARD" 2>/dev/null; then
+  # Fixed layout (sd-card.md): adds what is missing, never overwrites. Only
+  # when this system version hasn't done it yet (first boot, after updates).
+  version="$(cat /usr/lib/dena/version.txt 2>/dev/null)"
+  stamp="$CARD/Dena/user/.layout"
+  if [ "$(cat "$stamp" 2>/dev/null)" != "$version" ]; then
+    (
+      cd /usr/lib/dena/card || exit 0
+      find . -type d | while read -r d; do mkdir -p "$CARD/$d"; done
+      find . -type f | while read -r f; do [ -e "$CARD/$f" ] || cp "$f" "$CARD/$f"; done
+    )
+    mkdir -p "$CARD/Dena/user"
+    echo "$version" > "$stamp"
+    log "card laid out for $version"
+  fi
+  splash logo
+  log "card ready ($data)"
+  diag && log "diagnostic mode: logs in Dena/user"
+else
+  splash logo
+  log "cannot mount $data"
+fi
+exit 0

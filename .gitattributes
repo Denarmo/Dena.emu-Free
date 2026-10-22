@@ -1,0 +1,14 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+*.gba binary
+*.nes binary
+*.sfc binary
+*.nds binary
+*.dreplay binary
+# Shell scripts must keep LF so bash runs them on any checkout
+*.sh text eol=lf
+*.p8 text eol=lf
+# The single-card image tree is copied onto a Linux system as is: LF only
+os/image/** text eol=lf
+# git apply needs the patch bytes unchanged
+*.patch text eol=lf

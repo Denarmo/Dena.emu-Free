@@ -1,0 +1,33 @@
+From: Dena.emu <noreply@dena.emu>
+Subject: arm64: dts: sun50i-h616: add the DE3 SRAM section for the display bus
+
+The display engine bus claims SRAM C through allwinner,sram, but sram_c in
+sun50i-h616.dtsi is the plain mmio-sram node with no section under it, so
+sunxi_sram_of_parse() finds no matching section and the bus probe fails
+with -EINVAL ("Couldn't map SRAM to device"): no DRM display on the H700.
+Add the section like the H6 dtsi does and point the bus at it.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h616.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h616.dtsi
+@@ -163,7 +163,7 @@
+ 			compatible = "allwinner,sun50i-h616-de33",
+ 				     "allwinner,sun50i-a64-de2";
+ 			reg = <0x1000000 0x400000>;
+-			allwinner,sram = <&sram_c 1>;
++			allwinner,sram = <&de3_sram 1>;
+ 			#address-cells = <1>;
+ 			#size-cells = <1>;
+ 			ranges = <0 0x1000000 0x400000>;
+@@ -271,6 +271,12 @@
+ 				#address-cells = <1>;
+ 				#size-cells = <1>;
+ 				ranges = <0 0x00028000 0x30000>;
++
++				de3_sram: sram-section@0 {
++					compatible = "allwinner,sun50i-h616-sram-c",
++						     "allwinner,sun50i-a64-sram-c";
++					reg = <0x0000 0x1e000>;
++				};
+ 			};
+ 		};
+ 

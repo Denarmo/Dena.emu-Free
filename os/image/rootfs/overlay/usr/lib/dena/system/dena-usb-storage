@@ -1,0 +1,186 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Dena.emu system image: USB storage mode (docs/specs/single-card.md). Shows
+# the games partition to a computer on the USB-C port as a removable drive,
+# so games can be copied without taking the card out. The handheld must not
+# use the partition meanwhile, so dena-session runs this between launcher
+# runs: the launcher asks for it by creating /run/dena/usb-storage and
+# exiting. Does nothing without that request (it is used up here). Unmounts
+# the partition, serves it through a configfs gadget until the computer
+# ejects it, the cable is pulled, the power key is pressed or no computer
+# shows up for two minutes, then mounts it again. Exit status 1 if it could
+# not start, 2 if nobody asked for it.
+set -u
+PATH=${DENA_TEST_PATH:+$DENA_TEST_PATH:}/usr/sbin:/usr/bin:/sbin:/bin
+. "$(dirname "$0")/dena-lib.sh"
+SYS=$ROOT/sys
+CFG=$SYS/kernel/config
+G="$CFG/usb_gadget/dena"
+# Seconds per check, per unmount try, and for reading an error; os/tests
+# makes them short.
+TICK="${DENA_TEST_TICK:-1}"
+UMOUNT_WAIT="${DENA_TEST_TICK:-0.5}"
+ERROR_WAIT="${DENA_TEST_TICK:-4}"
+WAIT_TICKS=120   # no computer: back after 2 minutes
+UNPLUG_TICKS=2   # VBUS gone this long after the computer had the drive
+
+# Only the launcher's request starts it, and only once.
+if [ ! -f "$RUN/usb-storage" ]; then
+  log "USB: not requested"
+  exit 2
+fi
+rm -f "$RUN/usb-storage" "$RUN/usb-key"
+
+# One line of at most 35 characters at 640x480 (dena-splash); only letters,
+# digits and . , % - : / are drawn.
+show() { splash_now message "$@"; }
+fail() {
+  log "USB: $1"
+  show "$2"
+  sleep "$ERROR_WAIT"
+  exit 1
+}
+
+dev="$(grep " $CARD " "$ROOT/proc/mounts" | cut -d' ' -f1)"
+[ -n "$dev" ] || fail "games partition not mounted" "USB STORAGE: NO GAMES CARD"
+udc="$(ls "$SYS/class/udc" 2>/dev/null | head -n 1)"
+[ -n "$udc" ] || fail "no USB device controller" "USB STORAGE NOT AVAILABLE"
+show "STARTING USB STORAGE"
+
+remount() {
+  mount -t exfat -o noatime "$dev" "$CARD" 2>/dev/null ||
+    mount -t vfat -o noatime,utf8 "$dev" "$CARD" 2>/dev/null || {
+      log "USB: cannot mount $dev again"
+      show "GAMES CARD ERROR. RESTART"
+      sleep "$ERROR_WAIT"
+    }
+}
+
+teardown() {
+  [ -n "${keypid:-}" ] && kill "$keypid" 2>/dev/null
+  keypid=""
+  [ -d "$G" ] || return 0
+  echo "" > "$G/UDC" 2>/dev/null
+  rm -f "$G/configs/c.1/mass_storage.0"
+  rmdir "$G/configs/c.1/strings/0x409" "$G/configs/c.1" \
+    "$G/functions/mass_storage.0" "$G/strings/0x409" "$G" 2>/dev/null
+}
+
+# Processes with a file or folder open on the card, for the log.
+holders() {
+  for p in "$ROOT"/proc/[0-9]*; do
+    for f in "$p"/cwd "$p"/fd/*; do
+      case "$(readlink "$f" 2>/dev/null)" in
+        "$CARD"|"$CARD"/*) echo "$(basename "$p"):$(cat "$p/comm" 2>/dev/null)"; break ;;
+      esac
+    done
+  done
+}
+
+# VBUS from the PMIC's USB supply: 1 or 0, empty if there is none to read.
+vbus() {
+  for s in "$SYS"/class/power_supply/*; do
+    [ "$(cat "$s/type" 2>/dev/null)" = USB ] || continue
+    cat "$s/present" 2>/dev/null || cat "$s/online" 2>/dev/null
+    return
+  done
+}
+
+# The launcher has just exited: whatever was still closing (dena-powerd's
+# log) gets a few seconds before the card counts as busy.
+sync
+i=0
+until umount "$CARD" 2>/dev/null; do
+  i=$((i + 1))
+  if [ $i -ge 10 ]; then
+    log "USB: games partition busy: $(holders | tr '\n' ' ')"
+    fail "USB storage not started" "CARD BUSY. TRY AGAIN"
+  fi
+  sleep "$UMOUNT_WAIT"
+  sync
+done
+
+mountpoint -q "$CFG" || mount -t configfs configfs "$CFG"
+teardown
+part="$(basename "$dev")"
+serial="$(cut -c1-24 "$SYS/class/block/${part%p[0-9]*}/device/cid" 2>/dev/null)"
+mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409" "$G/functions/mass_storage.0"
+echo 0x1d6b > "$G/idVendor"   # Linux Foundation
+echo 0x0104 > "$G/idProduct"  # Multifunction Composite Gadget
+echo 0x0100 > "$G/bcdDevice"
+echo 0x0200 > "$G/bcdUSB"
+echo "Dena.emu" > "$G/strings/0x409/manufacturer"
+echo "Dena.emu games card" > "$G/strings/0x409/product"
+echo "${serial:-000000000001}" > "$G/strings/0x409/serialnumber"
+echo "Games card" > "$G/configs/c.1/strings/0x409/configuration"
+echo 500 > "$G/configs/c.1/MaxPower"
+lun="$G/functions/mass_storage.0/lun.0"
+echo 1 > "$lun/removable"
+echo 0 > "$lun/ro"
+echo 0 > "$lun/cdrom"
+printf '%-8s%-16s%-4s' Dena.emu "Games card" 0100 > "$lun/inquiry_string" 2>/dev/null
+if ! echo "$dev" > "$lun/file" ||
+   ! ln -s "$G/functions/mass_storage.0" "$G/configs/c.1/" ||
+   ! echo "$udc" > "$G/UDC"; then
+  teardown
+  remount
+  fail "cannot start the USB gadget on $udc" "USB STORAGE COULD NOT START"
+fi
+log "USB: serving $dev on $udc"
+
+# A press of the power key (dena-powerd is not running now) ends it too:
+# one input event is 24 bytes on arm64.
+keypid=""
+for e in "$SYS"/class/input/event*; do
+  [ "$(cat "$e/device/name" 2>/dev/null)" = axp20x-pek ] || continue
+  dd if="$ROOT/dev/input/$(basename "$e")" of="$RUN/usb-key" bs=24 count=1 2>/dev/null &
+  keypid=$!
+  break
+done
+
+# Ends when the computer ejects the drive (lun file emptied), when the cable
+# is pulled after the computer had it, on the power key, or after 2 minutes
+# with no computer.
+seen=0
+i=0
+off=0
+shown=""
+why=""
+while :; do
+  state="$(cat "$SYS/class/udc/$udc/state" 2>/dev/null)"
+  file="$(cat "$lun/file" 2>/dev/null)"
+  power="$(vbus)"
+  [ "$state" = configured ] && seen=1
+  if [ "$power" = 0 ]; then off=$((off + 1)); else off=0; fi
+  if [ -z "$file" ]; then
+    why="ejected by the computer"
+  elif [ -s "$RUN/usb-key" ]; then
+    why="power key"
+  elif [ $seen = 1 ] && { [ "$state" = "not attached" ] || [ $off -ge $UNPLUG_TICKS ]; }; then
+    why="cable unplugged"
+  elif [ $seen = 0 ] && [ $i -ge $WAIT_TICKS ]; then
+    why="no computer connected"
+  fi
+  [ -n "$why" ] && break
+  if [ $seen = 1 ]; then
+    want="USB DRIVE ON. EJECT IT TO RETURN"
+  else
+    want="CONNECT USB-C TO A COMPUTER"
+  fi
+  if [ "$want" != "$shown" ]; then
+    show "$want"
+    shown="$want"
+    log "USB: $want (udc $state, vbus ${power:-?})"
+  fi
+  sleep "$TICK"
+  i=$((i + 1))
+done
+log "USB: $why"
+
+show "RETURNING TO DENA.EMU"
+teardown
+sync
+remount
+rm -f "$RUN/usb-key"
+log "USB: games partition back on $CARD"
+exit 0

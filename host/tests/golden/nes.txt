@@ -1,0 +1,7 @@
+# Golden hashes for the NES core (FCEUmm) on our test ROM. Spec: docs/specs/cores-m2.md
+# Frame 68 is the first red frame; nes-press holds A (white). Hashes use the
+# core's declared option defaults (its default palette) since PR #15.
+# name        core            rom       frames replay                frame_hash audio_hash
+nes-idle      fceumm_libretro test.nes  70     -                     02d4050f57791d4a 60c69ebd0e0ea125
+nes-red       fceumm_libretro test.nes  68     -                     1eaea068379f1d4a 7f0ed29809b483c5
+nes-press     fceumm_libretro test.nes  60     latency-press.dreplay d75638fa9ad81d4a dbdb3cd01f9e3db5

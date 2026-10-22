@@ -1,0 +1,16 @@
+diff --git a/Source/PCH/pch.h b/Source/PCH/pch.h
+index 7a0d5ee..764b81c 100644
+--- a/Source/PCH/pch.h
++++ b/Source/PCH/pch.h
+@@ -6,9 +6,9 @@
+ #define STRINGIFY_HELPER(x) #x
+ #define STRINGIFY(x) STRINGIFY_HELPER(x)
+ 
+-#if defined _MSC_FULL_VER && _MSC_FULL_VER < 195136252
++#if defined _MSC_FULL_VER && _MSC_FULL_VER < 194400000
+ #pragma message("Current _MSC_FULL_VER: " STRINGIFY(_MSC_FULL_VER))
+-#error Please update your build environment to the latest Visual Studio 2026!
++#error Please update your build environment to the Visual Studio 2022 17.14 or newer!
+ #endif
+ 
+ #include <sdkddkver.h>

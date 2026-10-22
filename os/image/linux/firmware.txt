@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Firmware files built into the kernel (CONFIG_EXTRA_FIRMWARE), fetched from
+# the upstream linux-firmware tree at a pinned tag and checked by sha256
+# (os/image/build.sh). Each file's licence is in linux-firmware's WHENCE;
+# rtw88/rtw8821c_fw.bin: "Redistributable", linux/firmware-licences/
+# LICENCE.rtlwifi_firmware.txt (copied into the system image).
+# path                    url                                                                                         sha256
+rtw88/rtw8821c_fw.bin     https://gitlab.com/kernel-firmware/linux-firmware/-/raw/20260916/rtw88/rtw8821c_fw.bin     2ef409bc418549fcf294061dd0cae1fc22fd9da79b60524950b25de18732f3f0

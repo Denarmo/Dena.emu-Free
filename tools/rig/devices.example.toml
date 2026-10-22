@@ -1,0 +1,19 @@
+# Copy to devices.toml (git-ignored) and fill in your local addresses.
+# See docs/specs/rig.md.
+
+[devices.pixel]
+class = "android"          # android | handheld
+serial = "emulator-5554"   # adb serial (android only)
+
+[devices.rg35xx]
+class = "handheld"
+host = "192.168.1.50"      # SSH host (handheld only)
+user = "root"
+port = 22
+input_device = "/dev/input/event1"   # evdev node used for injection
+platform = "h700"          # h700 | a133p | rk3566
+deploy_dir = "/mnt/SDCARD/Dena"
+
+[latency]
+port = "COM5"              # serial port of the photodiode probe
+baud = 115200

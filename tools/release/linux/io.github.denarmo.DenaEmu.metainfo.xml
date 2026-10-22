@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for the Flatpak (and Flathub later). Every release
+     version in app/pubspec.yaml needs a <release> entry here: build-linux.sh
+     stops when it is missing. -->
+<component type="desktop-application">
+  <id>io.github.denarmo.DenaEmu</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Dena.emu</name>
+  <summary>Play your own retro games with a controller or a mouse</summary>
+  <developer id="io.github.denarmo">
+    <name>Denarmo</name>
+  </developer>
+  <description>
+    <p>
+      Dena.emu is a multi-system emulator with a console-style interface that
+      works with a controller, a keyboard or a mouse. It starts in fullscreen
+      when a controller is connected, so it is at home on the Steam Deck and
+      on a TV.
+    </p>
+    <p>Supported systems:</p>
+    <ul>
+      <li>NES, SNES, N64</li>
+      <li>Game Boy, Game Boy Color, Game Boy Advance, DS</li>
+      <li>PlayStation, PSP</li>
+      <li>Saturn, Dreamcast</li>
+      <li>PICO-8 carts</li>
+    </ul>
+    <p>
+      Features include a box-art library with watched game folders, save
+      states, auto-save and resume, rewind, fast-forward, cheats,
+      RetroAchievements and RomM server support.
+    </p>
+    <p>
+      No games or BIOS files are included. Use your own legally obtained
+      copies.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.denarmo.DenaEmu.desktop</launchable>
+  <url type="homepage">https://github.com/Denarmo/Dena.emu</url>
+  <url type="bugtracker">https://github.com/Denarmo/Dena.emu/issues</url>
+  <url type="vcs-browser">https://github.com/Denarmo/Dena.emu</url>
+  <categories>
+    <category>Game</category>
+    <category>Emulator</category>
+  </categories>
+  <supports>
+    <control>gamepad</control>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <branding>
+    <color type="primary" scheme_preference="light">#f1c40f</color>
+    <color type="primary" scheme_preference="dark">#202024</color>
+  </branding>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.1" date="2026-10-18">
+      <description>
+        <p>Zipped .cue and .bin disc games now import, one game per disc, with missing tracks named in the error.</p>
+      </description>
+    </release>
+    <release version="1.0.0" date="2026-10-18">
+      <description>
+        <p>First stable release: Brutalist redesign, twelve desktop cores, netplay, controller profiles, shader stacks and the ROM manager.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-10-18">
+      <description>
+        <p>Desktop test build for Windows and the Steam Deck: x86_64 cores, controller-first fullscreen, watched game folders.</p>
+      </description>
+    </release>
+    <release version="0.0.9" date="2026-10-18">
+      <description>
+        <p>First Linux desktop and Steam Deck build.</p>
+      </description>
+    </release>
+  </releases>
+</component>

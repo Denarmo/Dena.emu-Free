@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stand-in launcher for the QEMU boot test (os/image/qemu-test.sh): proves the
+# system image starts the app the way the real dena-launcher is started, and
+# shows the card layout the first boot made.
+echo "fake-launcher: ran handheld=$DENA_HANDHELD card=$DENA_CARD app=$1" > /dev/console
+echo "fake-launcher: roms: $(ls "$DENA_CARD/Roms" | tr '\n' ' ')" > /dev/console
+exit 0

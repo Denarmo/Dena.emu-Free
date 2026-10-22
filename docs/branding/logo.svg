@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108">
+  <!-- Dena.emu logo: a minimal "D" with a dot. 108x108 matches the Android
+       adaptive-icon canvas; everything sits inside the 66-unit safe zone.
+       Regenerate the platform icons with tools/branding/gen_icons.py.
+       The comment sits inside <svg>: one before it stops gdk-pixbuf from
+       recognising the file, and the Flatpak's appstream compose fails. -->
+  <rect id="background" width="108" height="108" fill="#16181D"/>
+  <g id="foreground" transform="translate(54.75 54) scale(0.86) translate(-54 -54)">
+    <path d="M33.5 39.5 H46.5 A14.5 14.5 0 0 1 46.5 68.5 H33.5 Z"
+          fill="none" stroke="#F5F6F7" stroke-width="7" stroke-linejoin="round"/>
+    <circle cx="72" cy="67.5" r="4.5" fill="#F1C40F"/>
+  </g>
+</svg>
